@@ -1,0 +1,25 @@
+# ESP32 工具链下载缓存(已安装到 %LocalAppData%\Arduino15\packages\,勿提交)
+_esp32_downloads/
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+
+# 编辑器临时
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# 构建输出
+build/
+*.bin
+*.elf
+
+# 临时诊断脚本(USB 调试等)
+_*.ps1
+_*.bat
+
+# 大图片备份(本地用,不入仓)
+# (需要时显式 add)
