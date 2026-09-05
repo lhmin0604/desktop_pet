@@ -26,30 +26,35 @@ public:
 class PetDisplay {
 public:
     void begin();
-    /* 渲染一帧；now=millis()，仅在 (心情变化 || 属性变化 || 眨眼阶段变化) 时真正重画 */
-    void render(PetMood mood, const PetStats& stats, unsigned long now);
+    /* 渲染一帧;动作非 ACT_NONE 时覆盖心情显示动作图,持续 ACT_DURATION_MS 后自动回心情
+     * 仅在 (心情变化 || 属性变化 || 动作变化) 时真正重画 */
+    void render(PetMood mood, PetAction action, const PetStats& stats, unsigned long now);
 
 private:
     LGFX _lcd;
 
     /* 渲染缓存（用于检测变化决定是否重画） */
     PetMood _lastMood;
+    PetAction _lastAction;
     uint8_t _lastHunger;
     uint8_t _lastAffection;
     uint8_t _lastLevel;
 
     /* === 绘制子模块 === */
-    void drawFace(PetMood mood, const PetStats& stats, unsigned long now);
+    void drawFace(PetMood mood, PetAction action, const PetStats& stats, unsigned long now);
     void drawStatusBar(const PetStats& stats, unsigned long now);
+    void drawActionLabel(PetAction action);                    /* 底部动作文字 (EATING...) */
     void drawMoodLabel(PetMood mood);                          /* 底部心情文字 (HAPPY:) */
 
-    /* === 完整身体矢量图（每个心情一张，8 个全部由 cat_bitmaps.h 提供） === */
-    void drawMoodBitmap(PetMood mood); /* 查表 cat_bitmaps[mood],bit=0 调 drawPixel */
+    /* === 完整身体矢量图（每个心情/动作一张，由 cat_bitmaps.h 提供） === */
+    void drawMoodBitmap(PetMood mood);     /* 查表 cat_bitmaps_mood[mood]  */
+    void drawActionBitmap(PetAction act);  /* 查表 cat_bitmaps_act[act-1] */
 
     /* === 工具 === */
     void drawSmallHeart(int cx, int cy, int s, uint32_t c);  /* 状态栏小心 */
     uint16_t cont(uint8_t r, uint8_t g, uint8_t b) { return _lcd.color888(r, g, b); }
     const char* moodName(PetMood mood);
+    const char* actionName(PetAction act);
 };
 
 #endif

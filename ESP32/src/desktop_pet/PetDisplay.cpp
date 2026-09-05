@@ -52,6 +52,7 @@ void PetDisplay::begin() {
     _lcd.setSwapBytes(true);
 
     _lastMood       = (PetMood)255;
+    _lastAction     = (PetAction)0xFF;
     _lastHunger     = 255;
     _lastAffection  = 255;
     _lastLevel      = 255;
@@ -60,37 +61,44 @@ void PetDisplay::begin() {
 }
 
 /* ==================== 主渲染（带短路逻辑） ==================== */
-void PetDisplay::render(PetMood mood, const PetStats& stats, unsigned long now) {
+void PetDisplay::render(PetMood mood, PetAction action, const PetStats& stats, unsigned long now) {
     /* 判断是否真的需要重画 */
     bool moodChanged   = (mood != _lastMood);
+    bool actionChanged = (action != _lastAction);
     bool statsChanged  = (stats.hunger != _lastHunger)
                       || (stats.affection != _lastAffection)
                       || (stats.level != _lastLevel);
 
-    if (!moodChanged && !statsChanged) {
+    if (!moodChanged && !actionChanged && !statsChanged) {
         return;   /* 一切未变，省一次全屏重绘 */
     }
 
     /* 真重画：先更新缓存 */
     _lastMood      = mood;
+    _lastAction    = action;
     _lastHunger    = stats.hunger;
     _lastAffection = stats.affection;
     _lastLevel     = stats.level;
 
-    drawFace(mood, stats, now);
+    drawFace(mood, action, stats, now);
 }
 
-/* ==================== 整张脸（按心情分发） ==================== */
-void PetDisplay::drawFace(PetMood mood, const PetStats& stats, unsigned long now) {
+/* ==================== 整张脸（按动作/心情分发） ====================
+ * 优先级: action ≠ ACT_NONE → 显示动作位图 + 动作文字
+ *         action = ACT_NONE → 显示心情位图 + 心情文字
+ */
+void PetDisplay::drawFace(PetMood mood, PetAction action, const PetStats& stats, unsigned long now) {
     _lcd.fillScreen(COL_BG);
 
     drawStatusBar(stats, now);
 
-    /* 所有 8 个心情都用完整身体位图(从 cat_bitmaps.h 查表) */
-    drawMoodBitmap(mood);
-
-    /* 底部心情文字(每个 SVG 不带文字,统一加) */
-    drawMoodLabel(mood);
+    if (action != ACT_NONE) {
+        drawActionBitmap(action);
+        drawActionLabel(action);
+    } else {
+        drawMoodBitmap(mood);
+        drawMoodLabel(mood);
+    }
 }
 
 /* ==================== 顶部状态栏 (24px) ==================== */
@@ -140,6 +148,15 @@ void PetDisplay::drawMoodLabel(PetMood mood) {
     _lcd.setTextDatum(textdatum_t::top_left);
 }
 
+/* ==================== 动作文字标签（底部居中） ==================== */
+void PetDisplay::drawActionLabel(PetAction action) {
+    _lcd.setTextDatum(textdatum_t::bottom_center);
+    _lcd.setFont(&fonts::Font4);
+    _lcd.setTextColor(COL_LINE);
+    _lcd.drawString(actionName(action), 160, 230);
+    _lcd.setTextDatum(textdatum_t::top_left);
+}
+
 /* ==================== 工具: 小爱心（用于状态栏） ==================== */
 void PetDisplay::drawSmallHeart(int cx, int cy, int s, uint32_t c) {
     int r = s / 2;
@@ -163,9 +180,20 @@ const char* PetDisplay::moodName(PetMood mood) {
     }
 }
 
-/* ==================== 8 个心情完整身体位图（统一从 cat_bitmaps.h 查表） ====================
- * 每个心情的 SVG 由 svg2catpath.py 转成 1-bit PROGMEM 位图:
- *   8640 字节/张 × 8 = 67.5KB flash,运行时 0 RAM
+/* ==================== 动作 => 底部文字标签 ==================== */
+const char* PetDisplay::actionName(PetAction act) {
+    switch (act) {
+        case ACT_EAT:     return "EATING...";
+        case ACT_PLAY:    return "PLAYING!";
+        case ACT_STAND_UP: return "STAND UP!";
+        case ACT_STROKE:  return "PURRING <3";
+        default:          return "?";
+    }
+}
+
+/* ==================== 8 心情 + 4 动作完整身体位图（统一从 cat_bitmaps.h 查表） ====================
+ * 每个心情/动作的 SVG 由 svg2catpath.py 转成 1-bit PROGMEM 位图:
+ *   8640 字节/张 × 12 (8 心情 + 4 动作) = 101.25 KB flash,运行时 0 RAM
  *   渲染: 查表 → 扫每行字节 → bit=0 (黑) 调 drawPixel
  *   速度: ~2000-3000 黑点 × drawPixel ≈ 5-8ms/帧
  *
@@ -179,7 +207,7 @@ void PetDisplay::drawMoodBitmap(PetMood mood) {
     const int y0 = 24;               /* 状态栏 24px 高度 */
 
     /* 查表取出对应位图首地址(指针本身在 PROGMEM) */
-    const uint8_t* bmp = (const uint8_t*)pgm_read_ptr(&cat_bitmaps[mood]);
+    const uint8_t* bmp = (const uint8_t*)pgm_read_ptr(&cat_bitmaps_mood[mood]);
 
     for (int y = 0; y < CAT_BMP_H; y++) {
         for (int xb = 0; xb < CAT_BMP_ROW_BYTES; xb++) {
@@ -191,6 +219,35 @@ void PetDisplay::drawMoodBitmap(PetMood mood) {
                 int x = xb * 8 + (7 - bit);
                 if (x >= CAT_BMP_W) break;
                 if (((byte >> bit) & 1) == 0) {   /* bit=0 = 猫身黑 */
+                    _lcd.drawPixel(x, y0 + y, INK);
+                }
+            }
+        }
+    }
+}
+
+/* ==================== 动作位图（查 cat_bitmaps_act[act-1]） ==================== */
+void PetDisplay::drawActionBitmap(PetAction act) {
+    /* 越界保护 */
+    if (act == ACT_NONE || (uint8_t)act >= ACT_COUNT) return;
+    uint8_t idx = (uint8_t)act - 1;   /* ACT_EAT=1 → idx=0 */
+    if (idx >= CAT_BMP_ACT_COUNT) return;
+
+    const uint32_t INK = 0x222222;
+    const int y0 = 24;
+
+    /* 查表: cat_bitmaps_act[] 本身在 PROGMEM,需 pgm_read_ptr */
+    const uint8_t* bmp = (const uint8_t*)pgm_read_ptr(&cat_bitmaps_act[idx]);
+
+    for (int y = 0; y < CAT_BMP_H; y++) {
+        for (int xb = 0; xb < CAT_BMP_ROW_BYTES; xb++) {
+            uint8_t byte = pgm_read_byte(&bmp[y * CAT_BMP_ROW_BYTES + xb]);
+            if (byte == 0xFF) continue;
+
+            for (int bit = 7; bit >= 0; bit--) {
+                int x = xb * 8 + (7 - bit);
+                if (x >= CAT_BMP_W) break;
+                if (((byte >> bit) & 1) == 0) {
                     _lcd.drawPixel(x, y0 + y, INK);
                 }
             }
