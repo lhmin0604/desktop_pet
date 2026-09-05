@@ -1,61 +1,89 @@
-# SVG 导入指南 (ESP32 宠物形象)
+# SVG 导入指南 (ESP32 宠物形象 · 8 心情批量版)
 
-> 本文档详细说明如何把设计好的 SVG 矢量图导入到 ESP32 桌宠项目中,变成可在 320×240 ILI9342C 屏幕上显示的位图。
+> 本文档详细说明如何把设计好的 **8 个心情 SVG** 矢量图导入到 ESP32 桌宠项目中,变成可在 320×240 ILI9342C 屏幕上显示的位图。
 >
-> 适用版本: Phase 1.7+ (一个情绪一张矢量图)
-> 工具链: Inkscape / Figma (画图) → cairosvg (渲染) → Pillow (二值化) → svg2catpath.py (打包成 C 数组)
+> **适用版本**: Phase 1.8+ (所有 8 个心情各一张矢量图,查表渲染)
+> **工具链**: Inkscape / Figma (画图) → cairosvg (渲染) → Pillow (二值化) → `svg2catpath.py` (打包成 C 数组)
 
 ---
 
 ## 〇、为什么需要这步?
 
 ESP32 屏幕只有 320×240 分辨率,而且没有 GPU。如果用 LovyanGFX 在运行时画矢量路径(贝塞尔曲线),会:
-- **慢**: 1069 段 drawLine ≈ 22ms/帧,80ms 节流下已经吃满
+- **慢**: 1069 段 `drawLine` ≈ 22ms/帧,80ms 节流下已经吃满
 - **糙**: 1px 直线没有抗锯齿,边缘全是锯齿
 - **占 RAM**: 路径数据如果存 RAM 会浪费宝贵的运行时内存
+- **难维护**: 8 个心情 × 几十段路径 = 几百行 C++ 代码
 
-最佳方案:**用 cairosvg 预先把 SVG 渲成抗锯齿的 1-bit 位图**,烧到 PROGMEM 里,ESP32 运行时只扫描位图、用 `drawPixel` 涂黑点。这样:
-- 快 (5ms/帧)
-- 清晰 (cairosvg 抗锯齿直接保留)
-- 省 (8.4KB flash, 0 RAM)
+最佳方案:**用 cairosvg 预先把 SVG 渲成抗锯齿的 1-bit 位图**,8 张烧到 PROGMEM 里,ESP32 运行时按心情查表、扫位图、用 `drawPixel` 涂黑点。这样:
+- **快** (5-8ms/帧,8 个都一样)
+- **清晰** (cairosvg 抗锯齿直接保留)
+- **省** (8 张共 67.5KB flash, 0 RAM)
+- **易维护** (改 SVG → 重跑脚本,不用改 C++)
 
 ---
 
 ## 一、整体流程
 
 ```
-┌────────────────────┐
-│  1. 画 SVG         │  Inkscape / Figma / Adobe Illustrator
-│  (手绘或导出)      │  ⚠️ 必须是真矢量,不能是"假矢量"
-└─────────┬──────────┘
-          │ image.svg (viewBox="0 0 W H")
-          ▼
-┌────────────────────┐
-│  2. 跑脚本         │  python svg2catpath.py
-│  (渲染+打包)       │  依赖: cairosvg, Pillow
-└─────────┬──────────┘
-          │ cat_bitmap.h (8.4KB, 1-bit PROGMEM)
-          ▼
-┌────────────────────┐
-│  3. C++ 渲染       │  PetDisplay::drawSleepyCat()
-│  (扫位图,涂黑)     │  扫字节,bit=0 调 drawPixel
-└─────────┬──────────┘
-          │ SPI 写到 LCD
-          ▼
-┌────────────────────┐
-│  4. 屏幕上看到     │  ~5ms/帧, 1615 个黑点组成猫
-└────────────────────┘
+┌──────────────────────────┐
+│  1. 画 8 个 SVG          │  Inkscape / Figma / Adobe Illustrator
+│  (手绘或导出)            │  ⚠️ 必须是真矢量,不能是"假矢量"
+└────────────┬─────────────┘
+             │ 8 个 .svg (放 cat_pic/ 目录,image.svg 留根目录)
+             ▼
+┌──────────────────────────┐
+│  2. 跑脚本               │  python svg2catpath.py
+│  (渲染+二值化+打包)      │  依赖: cairosvg, Pillow
+└────────────┬─────────────┘
+             │ cat_bitmaps.h (67.5KB, 8 × 1-bit PROGMEM)
+             ▼
+┌──────────────────────────┐
+│  3. (强烈建议)反渲验证   │  python verify_bitmaps.py
+│  (检查 8 张图对不对)     │  生成 cat_pic_preview/*.png + 拼图
+└────────────┬─────────────┘
+             │ PNG 拼图肉眼检查
+             ▼
+┌──────────────────────────┐
+│  4. C++ 渲染             │  PetDisplay::drawMoodBitmap(mood)
+│  (查表→扫位图→涂黑)     │  cat_bitmaps[mood] 查指针,扫字节
+└────────────┬─────────────┘
+             │ SPI 写到 LCD
+             ▼
+┌──────────────────────────┐
+│  5. 屏幕上看到           │  按当前 PetMood 渲染对应位图
+└──────────────────────────┘
 ```
 
 ---
 
-## 二、SVG 文件要求(最容易踩的坑!)
+## 二、8 个心情的 SVG 路径与命名
+
+`svg2catpath.py` 内部维护了一张**心情 → SVG 路径**的映射表。改这个表就能改映射。
+
+| 心情 (PetMood) | 枚举值 | 默认 SVG 路径 | 黑点数参考 | 备注 |
+|---|---|---|---|---|
+| HAPPY | 0 | `cat_pic/happy.svg` | ~2400 | 开心 |
+| NORMAL | 1 | `cat_pic/normal.svg` | ~1400 | 普通 |
+| HUNGRY | 2 | `cat_pic/hungry.svg` | ~3300 | 饥饿 |
+| SLEEPY | 3 | `image.svg` | ~1600 | **SLEEPY 单独用根目录的 `image.svg`**,不放在 cat_pic/ |
+| ANGRY | 4 | `cat_pic/angry.svg` | ~2200 | 生气 |
+| SICK | 5 | `cat_pic/ill.svg` | ~3600 | 生病 |
+| EXCITED | 6 | `cat_pic/very_happy.svg` | ~1300 | 超开心 |
+| LOVE | 7 | `cat_pic/love.svg` | ~2700 | 恋爱/被摸 |
+
+> **当前未使用** (在 cat_pic/ 里但没接到心情): `eating.svg` / `play.svg` / `stand_up.svg` / `stroke.svg`
+> 这些是预留的"场景动作"图(吃/玩/站立/抚摸),等以后有需要可以扩展成新心情或动画帧。
+
+---
+
+## 三、SVG 文件要求(最容易踩的坑!)
 
 ### ✅ 必须是真矢量
 
 正确的 SVG 长这样:
 ```xml
-<svg viewBox="0 0 1549 775" ...>
+<svg viewBox="0 0 1508 795" ...>
   <path d="M929.14 114.5 C933.04 114.57 937.2 111.94 940.73 110.27 C..."
         fill="#040503"/>
 </svg>
@@ -69,162 +97,150 @@ ESP32 屏幕只有 320×240 分辨率,而且没有 GPU。如果用 LovyanGFX 在
 
 某些工具(尤其是 PDF 编辑器、在线转换器)导出的 SVG 其实是位图,长这样:
 ```xml
-<svg viewBox="0 0 1549 775" ...>
+<svg viewBox="0 0 1508 795" ...>
   <image xlink:href="data:image/png;base64,iVBORw0KGgo..."
-         width="1549" height="775"/>
+         width="1508" height="775"/>
 </svg>
 ```
 **判断方法**: 用文本编辑器打开 SVG,搜索 `path`。如果只有 `<image>` 标签,没有 `<path>`,就是位图,不能直接用。
 
 ### ❌ 不能用 PDF
 
-`image.pdf` 看起来是矢量文件,但很多情况下 PDF 内嵌的是位图:
+PDF 几乎都是位图(尤其是从 Word/Excel 导出的)。**先转真矢量 SVG 再用脚本**。
 
-```bash
-# 用 pdfimages 或文本编辑器查看 PDF 内容
-pdftotext image.pdf - | head
-# 或 strings image.pdf | grep ImageXObject
-```
+### ✅ viewBox 比例无所谓
 
-正确的 PDF 矢量内容: `<< /Type /Annot /Subtype /Line /... >>`
-错误的位图内容: `<< /Type /XObject /Subtype /Image /Filter /FlateDecode >>`
-
-**本项目踩过的坑**:
-- `image.pdf` 1536×768 位图 (看起来像矢量但其实是 PNG 嵌进 PDF)
-- `image.svg` 1549×775 真矢量 ✅
-
-如果只有 PDF/位图,需要用 Inkscape 重新描一遍,或者用 potrace 之类的工具自动描。
-
-### viewBox 大小不重要
-
-- `viewBox="0 0 1549 775"` ✓ 任意大小,脚本会等比缩放到 320×216
-- `viewBox="0 0 100 100"` ✓ 也能用
-- 但**宽高比**最好接近 320:216 ≈ 1.48:1,否则会留很多白边
-
-### 颜色
-
-- 推荐:纯黑/深灰描边 (`#040503`, `#222222` 等)
-- 避免:渐变、阴影、彩色填充(1-bit 位图只能二值化)
-- 多色 SVG 会被脚本取灰度,只保留"够暗"的像素(灰度 < 128)
+脚本会按 `output_width=320, output_height=216` 强制缩放。viewBox 比例不需要和 320:216 一致,cairosvg 会按比例 fit。
 
 ---
 
-## 三、工具安装
+## 四、工具安装
 
-### Python 依赖
-
+只需要 cairosvg + Pillow 两个 Python 库。脚本会**自动检查并安装**:
 ```bash
 pip install cairosvg Pillow
-# 或一键装(脚本会自动检测并安装)
-python svg2catpath.py
-# 输出 [依赖] 缺 cairosvg/Pillow,正在自动安装... 时会自动跑 pip
 ```
 
-### 系统依赖(cairosvg 需要 cairo 库)
-
-- **Windows**: cairosvg 自带 wheel,无需额外装
-- **macOS**: `brew install cairo pkg-config libffi`
-- **Ubuntu/Debian**: `sudo apt install libcairo2-dev pkg-config python3-dev`
-- **Fedora**: `sudo dnf install cairo-devel pkg-config python3-devel`
-
-### 画图工具
-
-| 工具 | 适用 | 备注 |
-|------|------|------|
-| **Inkscape** | 画矢量图 | 免费开源,导出 SVG 干净 |
-| **Figma** | 设计/原型 | 免费版够用,导出 SVG 时**关闭** `Outline text` |
-| **Adobe Illustrator** | 专业设计 | 导出 SVG 时选 "Save As" → SVG,不要 "Save for Web" |
-| **纸笔 + 扫描** | 不会画图 | 扫描后用 potrace 矢量化 |
-
----
-
-## 四、运行脚本
-
+如果自动安装失败(比如 Windows 上缺 cairo 系统库),用 conda:
 ```bash
-# 默认: 读 image.svg → cat_bitmap.h
-python svg2catpath.py
-
-# 指定输入输出
-python svg2catpath.py my_cat.svg ESP32/src/desktop_pet/cat_bitmap_my.h
+conda install -c conda-forge cairosvg pillow
 ```
 
-输出示例:
-```
-[1/4] 检查依赖 ...
-[2/4] cairosvg 渲染 image.svg → 640x432 ...
-[3/4] 二值化 (阈值 128) ...
-      透明像素: 96.8%
-[4/4] 生成 ESP32/src/desktop_pet/cat_bitmap.h ...
-      OK 8640 字节 (8.4 KB) PROGMEM
-```
-
-### 调参(脚本顶部常量)
-
-```python
-SCREEN_W      = 320   # 屏幕宽
-SCREEN_H      = 240   # 屏幕高
-STATUSBAR_H   = 24    # 顶部状态栏高度(猫从 STATUSBAR_H 开始画)
-CAT_W         = 320   # 猫图宽 (= 屏幕宽)
-CAT_H         = 216   # 猫图高 (= 屏幕高 - 状态栏)
-RENDER_SCALE  = 2     # 超采样倍数 (2 = 640×432 渲染再下采样)
-THRESHOLD     = 128   # 二值化阈值 (灰度 < 阈值 = 黑)
-```
-
-**常见调参**:
-- 猫太淡 → 调高 `THRESHOLD` (e.g. 100)
-- 猫太粗/糊 → 调低 `THRESHOLD` (e.g. 160)
-- 猫细节不够 → 调高 `RENDER_SCALE` (e.g. 3 → 4x 超采样)
-- 状态栏高度变了 → 改 `STATUSBAR_H`
+> **Windows 用户注意**: cairosvg 依赖 Cairo 原生库。如果 `pip install cairosvg` 报 "cannot find cairo",装 GTK+ runtime 或用 conda。
 
 ---
 
-## 五、生成的文件结构
+## 五、运行脚本
 
-`cat_bitmap.h` 大致长这样:
+### 批量模式(推荐)
+```bash
+python svg2catpath.py
+```
+读所有 8 个 SVG → 生成 `ESP32/src/desktop_pet/cat_bitmaps.h`。
 
+### 单文件模式(调试用)
+```bash
+python svg2catpath.py cat_pic/happy.svg /tmp/happy.h
+```
+
+### 输出文件结构
 ```c
-/* 自动生成 from image.svg, 不要手改 */
-#pragma once
-#include <Arduino.h>
+// cat_bitmaps.h 头部
+enum {
+    CAT_BMP_MOOD_HAPPY   = 0,
+    CAT_BMP_MOOD_NORMAL  = 1,
+    CAT_BMP_MOOD_HUNGRY  = 2,
+    CAT_BMP_MOOD_SLEEPY  = 3,
+    CAT_BMP_MOOD_ANGRY   = 4,
+    CAT_BMP_MOOD_SICK    = 5,
+    CAT_BMP_MOOD_EXCITED = 6,
+    CAT_BMP_MOOD_LOVE    = 7,
+    CAT_BMP_MOOD_COUNT   = 8
+};
 
 #define CAT_BMP_W         320
 #define CAT_BMP_H         216
-#define CAT_BMP_ROW_BYTES 40          /* 320/8 = 40 字节/行 */
-#define CAT_BMP_BYTES     8640        /* 40 * 216 = 8640 字节 */
+#define CAT_BMP_ROW_BYTES 40
+#define CAT_BMP_BYTES     8640      // 40 * 216
 
-static const uint8_t cat_bitmap[CAT_BMP_BYTES] PROGMEM = {
-  /* row   0 */  0xFF, 0xFF, 0xFF, ..., 0xFF,
-  /* row   1 */  0xFF, 0xFF, 0xFF, ..., 0xFF,
-  ...
-  /* row 215 */  0xFF, 0xFF, 0xFF, ..., 0xFF,
+// 8 个独立 PROGMEM 数组
+static const uint8_t cat_bitmap_happy[CAT_BMP_BYTES]   PROGMEM = { ... };
+static const uint8_t cat_bitmap_normal[CAT_BMP_BYTES]  PROGMEM = { ... };
+// ... 共 8 个
+
+// 查表: mood → bitmap pointer
+static const uint8_t* const cat_bitmaps[CAT_BMP_MOOD_COUNT] PROGMEM = {
+    cat_bitmap_happy,    // MOOD_HAPPY
+    cat_bitmap_normal,   // MOOD_NORMAL
+    cat_bitmap_hungry,   // MOOD_HUNGRY
+    cat_bitmap_sleepy,   // MOOD_SLEEPY
+    cat_bitmap_angry,    // MOOD_ANGRY
+    cat_bitmap_sick,     // MOOD_SICK
+    cat_bitmap_excited,  // MOOD_EXCITED
+    cat_bitmap_love,     // MOOD_LOVE
 };
 ```
 
-**位图格式**:
-- 1-bit MSB-first
-- **0 = 猫身黑** (画黑点)
-- **1 = 背景白** (透明,不画,保留屏幕背景色)
-- 行对齐到字节 (320 px / 8 = 40 bytes/row)
+**总大小**: 8 × 8640 + 查表 16 字节 ≈ **67.5 KB PROGMEM**。
 
 ---
 
-## 六、C++ 端集成
+## 六、调整参数
 
-### 简单方案(推荐,稳如老狗)
+打开 `svg2catpath.py`,顶部 4 个常量决定渲染质量:
 
-`PetDisplay.cpp`:
+```python
+SCREEN_W     = 320         # 屏幕宽
+SCREEN_H     = 240         # 屏幕高
+STATUSBAR_H  = 24          # 顶部状态栏,猫区 = 240-24 = 216
+CAT_W        = SCREEN_W    # 320
+CAT_H        = SCREEN_H - STATUSBAR_H  # 216
+RENDER_SCALE = 2           # 2x 超采样 (再下采样,保抗锯齿)
+THRESHOLD    = 128         # 二值化阈值 (< 这个值 = 黑)
+```
+
+- **`RENDER_SCALE=2`**: 先渲 640×432,再 LANCZOS 下采到 320×216。比例越大越清晰,但越慢(脚本运行时)
+- **`THRESHOLD=128`**: 灰度 < 128 算黑,>= 128 算白。SVG 线条细 → 调大(150),线条粗 → 调小(100)
+- **改 `STATUSBAR_H`**: 状态栏高度变了(比如改成 32),猫区高度自动跟着变
+
+---
+
+## 七、C++ 集成
+
+### 1. 包含头文件
 ```cpp
-#include "cat_bitmap.h"
+#include "PetDisplay.h"
+#include "cat_bitmaps.h"  // 由 svg2catpath.py 自动生成
+```
 
-void PetDisplay::drawSleepyCat() {
-    const uint32_t INK = 0x222222;  // 墨黑
-    const int y0 = 24;              // 状态栏高度
+### 2. 渲染调用
+
+`PetDisplay::drawMoodBitmap(mood)` 已经按 `cat_bitmaps[mood]` 查表,你**不需要手动写任何渲染代码**。
+
+```cpp
+// 在 PetDisplay.cpp 的 drawFace() 里:
+void PetDisplay::drawFace(PetMood mood, const PetStats& stats, unsigned long now) {
+    _lcd.fillScreen(COL_BG);
+    drawStatusBar(stats, now);
+    drawMoodBitmap(mood);   // 查表→画当前心情的位图
+    drawMoodLabel(mood);    // 底部心情文字 (e.g. "HAPPY :)")
+}
+```
+
+### 3. drawMoodBitmap 实现(参考)
+```cpp
+void PetDisplay::drawMoodBitmap(PetMood mood) {
+    if ((uint8_t)mood >= CAT_BMP_MOOD_COUNT) return;
+    const uint32_t INK = 0x222222;
+    const int y0 = 24;  // 状态栏高度
+
+    // 查表: cat_bitmaps[] 本身在 PROGMEM,要 pgm_read_ptr 读
+    const uint8_t* bmp = (const uint8_t*)pgm_read_ptr(&cat_bitmaps[mood]);
 
     for (int y = 0; y < CAT_BMP_H; y++) {
         for (int xb = 0; xb < CAT_BMP_ROW_BYTES; xb++) {
-            uint8_t byte = pgm_read_byte(&cat_bitmap[y * CAT_BMP_ROW_BYTES + xb]);
-            if (byte == 0xFF) continue;  // 全白,跳过
-
+            uint8_t byte = pgm_read_byte(&bmp[y * CAT_BMP_ROW_BYTES + xb]);
+            if (byte == 0xFF) continue;
             for (int bit = 7; bit >= 0; bit--) {
                 int x = xb * 8 + (7 - bit);
                 if (x >= CAT_BMP_W) break;
@@ -237,159 +253,59 @@ void PetDisplay::drawSleepyCat() {
 }
 ```
 
-**性能**: 1615 黑点 × ~3µs = ~5ms/帧
-**优点**: LovyanGFX 兼容性最好,所有版本都支持
-**缺点**: 像素调用次数多(虽然只画黑点)
-
-### 进阶方案(run-length 优化)
-
-如果发现上面太慢(理论上不会),可以用 `fillRect` 合并横向连续黑点:
-```cpp
-// 找连续 0 位,用 fillRect 一次画一条横线
-_lcd.fillRect(x0 + run_start, y0 + y, x - run_start, 1, INK);
-```
-理论能快 20-30%,但代码复杂、边界 case 多,初版不推荐。
-
-### ❌ 不要用 pushImage
-
-虽然 LovyanGFX 有 `pushImage(x, y, w, h, data)` 一帧推完,但:
-- 需要把 1-bit 位图转 RGB565,数据量从 8.4KB 暴涨到 135KB
-- PROGMEM 占用变成 16x
-- 透明色处理复杂(需要 0x0001 这种 magic value)
-- 收益有限(5ms → 4ms)
-
-**当前项目就是从 pushImage 方案退回 drawPixel 方案的**,见 §八 教训。
-
 ---
 
-## 七、验证方法(必做!)
+## 八、(必做!)反渲验证
 
-生成 `cat_bitmap.h` 后,在烧到 ESP32 前**一定要**先用 Python 验证位图数据正确:
+**烧固件前必须验证位图反渲出来是啥样**。否则可能:
+- SVG 写错导致某行/某列全白
+- THRESHOLD 不对导致整张图全黑/全白
+- 某个 path 漏渲染
 
-```python
-# 验证脚本 (保存为 verify_bmp.py)
-import re
-from PIL import Image
+`verify_bitmaps.py` 解析 `cat_bitmaps.h` → 反渲成 8 张 PNG + 一张拼图:
 
-W, H, ROW_BYTES = 320, 216, 40
-
-with open('ESP32/src/desktop_pet/cat_bitmap.h', 'r', encoding='utf-8') as f:
-    content = f.read()
-
-bytes_list = re.findall(r'0x([0-9A-Fa-f]{2})', content)
-print(f'提取到 {len(bytes_list)} 字节 (期望 {ROW_BYTES * H})')
-assert len(bytes_list) == ROW_BYTES * H, "字节数不匹配!"
-
-img = Image.new('L', (W, H), 255)
-pixels = img.load()
-data = bytes(int(b, 16) for b in bytes_list)
-
-for y in range(H):
-    for xb in range(ROW_BYTES):
-        byte = data[y * ROW_BYTES + xb]
-        for bit in range(7, -1, -1):
-            x = xb * 8 + (7 - bit)
-            if x >= W: break
-            if not ((byte >> bit) & 1):
-                pixels[x, y] = 0
-
-img.save('_verify_bmp.png')
-print('OK -> _verify_bmp.png (用图片查看器打开看效果)')
+```bash
+python verify_bitmaps.py
 ```
 
-**应该看到**: 一只清晰的小猫,黑线轮廓分明,跟 `image.svg` 在浏览器/Inkscape 里看到的一致。
+输出:
+- `cat_pic_preview/happy.png` 等 8 张 320×216 单图
+- `cat_pic_preview/_all_moods.png` 4×2 缩放拼图(关键看这个!)
 
-**如果看到**:
-- **全白** → 脚本出 bug 了,所有像素都被二值化成 1,调高 `THRESHOLD` 或检查 SVG 是否非空
-- **全黑** → 阈值过低,所有像素都被当成猫身,调低 `THRESHOLD`
-- **猫形状不对** → 比例不对,检查 SVG viewBox 是否设置正确
-- **马赛克/锯齿** → `RENDER_SCALE` 太小,调到 3 或 4
+**对比看拼图**:
+- 每只猫应该清晰可辨
+- 5 只差别大(开心/饿/病/怒/睡),3 只相似(普通/超开心/恋爱)
+- 没有整张全黑/全白的(那是脚本坏了)
+- 没有残影/锯齿严重(那是 SVG 不是真矢量)
 
----
-
-## 八、踩过的坑(必读!)
-
-### 坑 1: 用 PDF 当矢量源
-
-**症状**: SVG 看起来"对"但渲出来是乱线/全白/全黑
-**原因**: PDF 实际是位图 (`/Subtype /Image`),不是真矢量
-**解决**: 用 Inkscape 重画或 `potrace` 矢量化,导出真 SVG
-
-### 坑 2: Figma 导出 SVG 时把文字转曲线了
-
-**症状**: 文字部分(REST 字符)在屏幕上显示不正常
-**原因**: Figma 默认 "Outline text" 把文字转成 path,但路径数据可能有偏差
-**解决**: Figma 导出 SVG 时**取消勾选** "Outline text",或者用系统字体重新嵌入
-
-### 坑 3: 字节序错位,屏幕显示镜像
-
-**症状**: 猫左右颠倒,或者像素错位
-**原因**: MSB/LSB 弄反,或 LovyanGFX `setSwapBytes()` 跟数据格式不匹配
-**解决**:
-- 1-bit 位图无字节序问题(只有 RGB565 pushImage 才有)
-- 如果用 RGB565,确认 `setSwapBytes(true)` + 数据大端
-
-### 坑 4: 编译报 `'XXX' was not declared in this scope`
-
-**症状**: 编译失败,找不到某个常量(如 `STATUSBAR_H`)
-**原因**: 脚本(Python)里的常量没同步到 C++ 端
-**解决**: 在 C++ 里用字面量,或者在 `.h` 文件里定义共享常量
-
-### 坑 5: 状态栏被猫覆盖 / 猫画到状态栏里
-
-**症状**: 猫显示在屏幕最顶端,或者状态栏看不见
-**原因**: 忘了 `STATUSBAR_H` 偏移,猫从 y=0 开始画
-**解决**: `y0 = STATUSBAR_H` (本项目是 24px)
-
-### 坑 6: 屏白屏,完全没显示
-
-**症状**: 上传后屏幕一片白/全黑/全蓝
-**排查顺序**:
-1. 编译有没有 0 error? (有 error 的话烧的还是旧固件)
-2. 串口有没有 `[屏幕] OK`? (没有 = `display.begin()` 没跑)
-3. `display.begin()` 之后有没有 `fillScreen(COL_BG)`? (没有 = 上次内容残留)
-4. 是不是 `pgm_read_byte` 读到错数据? (检查 `cat_bitmap` 数组大小, 是否被编译器优化掉)
-5. 用 `drawPixel` 替代 `writeFillRect`/`pushImage` 看能不能显示
-
-### 坑 7: 屏闪/撕裂/残影
-
-**症状**: 屏幕上看到上一帧的残留
-**原因**: `fillScreen` 没调,或者 `drawFace` 被中断
-**解决**: 每次 `render()` 都先 `fillScreen(COL_BG)`
+如果某张图不对,改对应的 SVG,再跑 `svg2catpath.py` 和 `verify_bitmaps.py`。
 
 ---
 
-## 九、其他 7 个心情怎么加?
+## 九、踩过的坑(必读!)
 
-照同样套路:
-1. 画 `image_happy.svg`、`image_hungry.svg` ... 7 个文件
-2. 跑脚本各生成一个 `.h`:
-   ```bash
-   python svg2catpath.py image_happy.svg cat_bitmap_happy.h
-   python svg2catpath.py image_hungry.svg cat_bitmap_hungry.h
-   ...
-   ```
-3. `PetDisplay.h` 加 7 个 `drawXxxCat()` 声明
-4. `PetDisplay.cpp` 加 7 个 `drawXxxCat()` 实现(各 include 对应 `.h`)
-5. `drawFace()` 里按 mood 分发:
-   ```cpp
-   if (mood == MOOD_SLEEPY) drawSleepyCat();
-   else if (mood == MOOD_HAPPY) drawHappyCat();
-   ...
-   ```
-6. **可优化**: 7 张图全用 1-bit,共 7×8.4 = 59KB PROGMEM,仍能接受
-
-**如果想动态切换** (用户上传自己的宠物图):
-- 把 1-bit 位图存到 SD 卡,运行时 `pgm_read_byte` → `drawPixel`
-- 详见 Phase 3 规划(SD 卡 + 触摸)
+| 坑 | 表现 | 排查 |
+|---|---|---|
+| **SVG 是位图** (`<image>` 标签) | cairosvg 抛 "no svg" 或输出全白 | 文本编辑器打开,搜 `<path>` |
+| **viewBox 比例严重失调** | 猫挤到一角/被裁 | 改 SVG 的 viewBox 或调整 RENDER_SCALE |
+| **THRESHOLD 不对** | 整张黑/白/花 | 改 `THRESHOLD` 调 100/150 试试 |
+| **漏写闭合** (缺 `Z`) | 路径不闭合/不填色 | 检查 `<path d=` 最后有 `Z` |
+| **忘记重跑脚本** | 改了 SVG,屏幕没变 | `python svg2catpath.py` + 重新编译 |
+| **忘改 `#define` 常量** | 编译报"数组越界"或"未声明" | 同步改 STATUSBAR_H 等 |
 
 ---
 
-## 十、参考链接
+## 十、换图流程(总结)
 
-- [cairosvg 文档](https://cairosvg.org/documentation/)
-- [Pillow 图像处理](https://pillow.readthedocs.io/)
-- [Inkscape 导出 SVG 教程](https://inkscape.org/doc/tutorials/)
-- [LovyanGFX drawPixel 文档](https://github.com/lovyan03/LovyanGFX)
-- [本项目架构文档 §1.7](./屏幕显示架构.md#一七sleepy-完整身体矢量图phase-17)
-- [svg2catpath.py](../svg2catpath.py) 源码
+1. **准备 8 个 SVG** → 放 `cat_pic/` (SLEEPY 用 `image.svg` 在根目录)
+2. **跑脚本** → `python svg2catpath.py` (生成 `cat_bitmaps.h`)
+3. **反渲验证** → `python verify_bitmaps.py` → 看 `cat_pic_preview/_all_moods.png`
+4. **不满意?改 SVG,回到 1**
+5. **满意?编译烧固件** → 看 ESP32 屏幕
+
+如果新加一个心情(比如 `MOOD_PLAY`):
+1. 在 `PetState.h` 的 enum 加 `MOOD_PLAY`
+2. 在 `svg2catpath.py` 的 `MOOD_SVG` 列表加 `("play", "cat_pic/play.svg")`
+3. 在 `cat_bitmaps.h` 的 enum 块加 `CAT_BMP_MOOD_PLAY = 8, CAT_BMP_MOOD_COUNT = 9`
+4. 跑脚本 + 验证
+5. `PetDisplay::drawMoodBitmap(MOOD_PLAY)` 自动就支持了(因为 `cat_bitmaps[MOOD_PLAY]` 已存在)
