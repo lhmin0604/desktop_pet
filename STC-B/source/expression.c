@@ -231,29 +231,30 @@ void ExprPlaySound(unsigned char sound_id)
     if(sound_id < 1 || sound_id > 8)
         return;
 
-    freq = sound_table[sound_id - 1][0];
-    time = sound_table[sound_id - 1][1];
-
-    /* 检查蜂鸣器是否空闲 */
-    if(GetBeepStatus() == enumBeepFree)
-    {
-        SetBeep(freq, time);
-    }
-
     /* 特殊音效: 开心双音 */
     if(sound_id == SOUND_HAPPY)
     {
+        if(GetBeepStatus() != enumBeepFree) return;
         /* 先播第一声，后续在定时回调中播第二声 */
         SetBeep(800, 10);   /* 800Hz, 100ms */
         /* TODO: 200ms 后再播 1200Hz */
+        return;
     }
 
     /* 特殊音效: 低落下降音 */
     if(sound_id == SOUND_SAD)
     {
+        if(GetBeepStatus() != enumBeepFree) return;
         SetBeep(800, 15);   /* 800Hz, 150ms */
         /* TODO: 300ms 后再播 400Hz */
+        return;
     }
+
+    /* 普通音效: 使用 sound_table */
+    if(GetBeepStatus() != enumBeepFree) return;
+    freq = sound_table[sound_id - 1][0];
+    time = sound_table[sound_id - 1][1];
+    SetBeep(freq, time);
 }
 
 void ExprSetAll(unsigned char expr_id, unsigned char led, unsigned char sound_id)
