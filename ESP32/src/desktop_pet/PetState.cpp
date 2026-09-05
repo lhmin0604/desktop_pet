@@ -12,6 +12,9 @@
 #define ENERGY_DECAY_INTERVAL   120000  /* 每120秒精力-1 */
 #define HAPPINESS_DECAY_INTERVAL 90000  /* 每90秒快乐-1 */
 
+/* 精力被动恢复 (+1/300秒 = +0.2/分,远慢于自然衰减 -0.5/分,实现"比消耗慢") */
+#define ENERGY_PASSIVE_INTERVAL_SEC  300
+
 /* 交互增益 */
 #define FEED_AMOUNT     20      /* 喂食增加的饱食度 */
 #define PLAY_AMOUNT     15      /* 玩耍增加的快乐值 */
@@ -74,10 +77,10 @@ void PetState::update() {
         Serial.println("[动作] 结束,恢复显示心情");
     }
 
-    /* 0.5 精力被动恢复 (~0.1/秒 = +1/10秒,封顶 100) */
-    static uint8_t energy_recover_sec = 0;
+    /* 0.5 精力被动恢复 (+0.2/分,比自然衰减 -0.5/分 慢,空闲时仍会缓慢掉精力) */
+    static uint16_t energy_recover_sec = 0;
     energy_recover_sec++;
-    if (energy_recover_sec >= 10) {
+    if (energy_recover_sec >= ENERGY_PASSIVE_INTERVAL_SEC) {
         energy_recover_sec = 0;
         if (_stats.energy < 100) _stats.energy++;
     }
