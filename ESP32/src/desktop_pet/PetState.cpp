@@ -74,6 +74,14 @@ void PetState::update() {
         Serial.println("[动作] 结束,恢复显示心情");
     }
 
+    /* 0.5 精力被动恢复 (~0.1/秒 = +1/10秒,封顶 100) */
+    static uint8_t energy_recover_sec = 0;
+    energy_recover_sec++;
+    if (energy_recover_sec >= 10) {
+        energy_recover_sec = 0;
+        if (_stats.energy < 100) _stats.energy++;
+    }
+
     /* 1. 属性自然衰减 (每60秒衰减一次) */
     if (now - _last_decay > 60000) {
         _last_decay = now;
@@ -278,37 +286,35 @@ void PetState::setMood(PetMood mood) {
     applyMood();
 }
 
+/* 动作触发 (瞬时动画,持续 3s 自动回心情) */
+
 /* K1 = 喂食 (ACT_EAT), K2 = 玩耍 (ACT_PLAY), K3 = 摸头 (ACT_STROKE) */
 void PetState::onButtonPress(uint8_t key_id) {
     _stats.interact_count++;
 
     switch (key_id) {
-        case 1: /* K1: 喂食 */
+        case 1: /* K1: 喂食 → ACT_EAT (+饱食 +快乐 +精力) */
             Serial.println("[互动] 🍖 喂食！");
-            _stats.hunger += FEED_AMOUNT;
-            if (_stats.hunger > 100) _stats.hunger = 100;
-            _stats.happiness += 5;
-            if (_stats.happiness > 100) _stats.happiness = 100;
+            _stats.hunger = (_stats.hunger + FEED_AMOUNT > 100) ? 100 : (_stats.hunger + FEED_AMOUNT);
+            _stats.happiness = (_stats.happiness + 5 > 100) ? 100 : (_stats.happiness + 5);
+            _stats.energy    = (_stats.energy    + 10 > 100) ? 100 : (_stats.energy    + 10);   /* 食物=能量 */
             _proto->sendAll(EXPR_EAT, 0x0C, SOUND_EAT);
             triggerAction(ACT_EAT);
             break;
 
-        case 2: /* K2: 玩耍 */
+        case 2: /* K2: 玩耍 → ACT_PLAY (+快乐 -精力) */
             Serial.println("[互动] 🎮 玩耍！");
-            _stats.happiness += PLAY_AMOUNT;
-            if (_stats.happiness > 100) _stats.happiness = 100;
-            _stats.energy -= 5;  /* 玩耍消耗精力 */
-            if (_stats.energy > 100) _stats.energy = 0;
+            _stats.happiness = (_stats.happiness + PLAY_AMOUNT > 100) ? 100 : (_stats.happiness + PLAY_AMOUNT);
+            _stats.energy    = (_stats.energy > 5) ? (_stats.energy - 5) : 0;   /* 玩耍消耗精力,有下限保护 */
             _proto->sendAll(EXPR_PLAY, 0x3C, SOUND_HAPPY);
             triggerAction(ACT_PLAY);
             break;
 
-        case 3: /* K3: 摸头 */
+        case 3: /* K3: 摸头 → ACT_STROKE (+好感 +快乐 +精力) */
             Serial.println("[互动] 🤚 摸头！");
-            _stats.affection += PET_AMOUNT;
-            if (_stats.affection > 100) _stats.affection = 100;
-            _stats.happiness += 8;
-            if (_stats.happiness > 100) _stats.happiness = 100;
+            _stats.affection = (_stats.affection + PET_AMOUNT > 100) ? 100 : (_stats.affection + PET_AMOUNT);
+            _stats.happiness = (_stats.happiness + 8 > 100) ? 100 : (_stats.happiness + 8);
+            _stats.energy    = (_stats.energy + 5 > 100) ? 100 : (_stats.energy + 5);   /* 抚摸放松 */
             _proto->sendAll(EXPR_LOVE, 0x81, SOUND_LOVE);
             triggerAction(ACT_STROKE);
             break;
