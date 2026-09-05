@@ -37,38 +37,16 @@ private:
     uint8_t _lastHunger;
     uint8_t _lastAffection;
     uint8_t _lastLevel;
-    uint8_t _lastPhase;       /* 上次重绘时的眨眼阶段 0..3 */
-
-    /* 眨眼状态机 */
-    unsigned long _nextBlink;  /* 下一次眨眼开始时刻 (millis) */
-    unsigned long _blinkStart; /* 当前眨眼起始时刻 */
-    uint8_t       _phase;      /* 0=睁 1=半闭 2=全闭 3=半开 */
-
-    /* 当前心情是否带倒眉 */
-    bool _angry;
 
     /* === 绘制子模块 === */
     void drawFace(PetMood mood, const PetStats& stats, unsigned long now);
     void drawStatusBar(const PetStats& stats, unsigned long now);
-    void drawHeadOutline();
-    void drawEars();
-    void drawEyes(PetMood mood, uint8_t phase);
-    void drawNose();
-    void drawMouth(PetMood mood);
-    void drawCheeks(PetMood mood);
-    void drawEyebrows();
-    void drawWhiskers();
-    void drawDecoration(PetMood mood);
-    void drawMoodLabel(PetMood mood);
 
-    /* === 完整身体矢量图（每个心情一张，目前只实现 SLEEPY） === */
-    void drawSleepyCat();   /* 完整身体版：圆胖方形 + 耳 + 眯眼 + ω嘴 + 卷尾 + Zzz */
+    /* === 完整身体矢量图（每个心情一张，8 个全部由 cat_bitmaps.h 提供） === */
+    void drawMoodBitmap(PetMood mood); /* 查表 cat_bitmaps[mood],bit=0 调 drawPixel */
 
     /* === 工具 === */
-    void drawHeart(int cx, int cy, int s, uint32_t c);
-    void drawSpiral(int cx, int cy, int r, uint32_t c);
-    void drawSmallHeart(int cx, int cy, int s, uint32_t c);
-    uint8_t updateBlinkPhase(unsigned long now);
+    void drawSmallHeart(int cx, int cy, int s, uint32_t c);  /* 状态栏小心 */
     uint16_t cont(uint8_t r, uint8_t g, uint8_t b) { return _lcd.color888(r, g, b); }
     const char* moodName(PetMood mood);
 };
