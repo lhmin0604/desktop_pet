@@ -24,13 +24,14 @@ enum PetMood {
 
 /* 宠物动作 (瞬时动画,覆盖心情显示,超时后回到心情)
  * ACT_NONE=0 不会画动作图(查表用 action-1 当索引,所以索引 0..3 对应 ACT_EAT..ACT_STROKE)
- * 与 cat_bitmaps.h 的 CAT_BMP_ACT_* 一一对应 */
+ * 与 cat_bitmaps.h 的 CAT_BMP_ACT_* 一一对应
+ * ACT_VIBRATION 共用 stand_up.svg 文件 (语义改成"拍桌反应") */
 enum PetAction {
-    ACT_NONE    = 0,
-    ACT_EAT     = 1,    /* 吃饭 (K1) */
-    ACT_PLAY    = 2,    /* 玩耍 (K2) */
-    ACT_STAND_UP = 3,   /* 站立 (导航上) */
-    ACT_STROKE  = 4,    /* 抚摸 (K3) */
+    ACT_NONE      = 0,
+    ACT_EAT       = 1,    /* 吃饭 (K1) */
+    ACT_PLAY      = 2,    /* 玩耍 (K2) */
+    ACT_VIBRATION = 3,    /* 拍桌反应 (v 键) - 用 stand_up.svg 做图 */
+    ACT_STROKE    = 4,    /* 抚摸 (K3 / 磁铁) */
     ACT_COUNT
 };
 #define ACT_DURATION_MS  3000   /* 动作图持续显示 3 秒后回到心情图 */

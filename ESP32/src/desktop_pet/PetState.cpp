@@ -323,11 +323,10 @@ void PetState::onNavPress(uint8_t direction) {
 
     switch (direction) {
         case NAV_UP:
-            Serial.println("[导航] ⬆ 上 → ACT_STAND_UP");
+            Serial.println("[导航] ⬆ 上");
             _stats.happiness += 3;
             _proto->sendExpression(EXPR_SURPRISE);
             _proto->sendSound(SOUND_SHORT);
-            triggerAction(ACT_STAND_UP);
             break;
         case NAV_DOWN:
             Serial.println("[导航] ⬇ 下");
@@ -356,7 +355,7 @@ void PetState::onVibration() {
     _stats.interact_count++;
     Serial.println("[互动] 📳 拍桌子！");
 
-    /* 拍桌子 = 引起注意，宠物被吓到或开心 */
+    /* 拍桌子 = 引起注意,宠物被吓到或开心 */
     if (_stats.happiness > 50) {
         /* 心情好 → 开心回应 */
         _proto->sendAll(EXPR_LAUGH, 0xFF, SOUND_HAPPY);
@@ -368,6 +367,9 @@ void PetState::onVibration() {
 
     if (_stats.happiness > 100) _stats.happiness = 100;
     evaluateMood();
+
+    /* 屏幕上显示拍桌反应 (复用 stand_up.svg,3 秒) */
+    triggerAction(ACT_VIBRATION);
 }
 
 void PetState::onHall(bool close) {

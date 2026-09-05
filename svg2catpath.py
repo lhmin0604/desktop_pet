@@ -30,7 +30,7 @@ SVG → ESP32 1-bit 位图 C 数组 批量转换脚本 (Phase 1.8)
 动作 → SVG 映射:
   ACT_EAT      <- cat_pic/eating.svg
   ACT_PLAY     <- cat_pic/play.svg
-  ACT_STAND_UP <- cat_pic/stand_up.svg
+  ACT_VIBRATION <- cat_pic/stand_up.svg   (文件名不动,语义改成"拍桌")
   ACT_STROKE   <- cat_pic/stroke.svg
 """
 
@@ -64,12 +64,12 @@ MOOD_SVG = [
 N_MOODS = len(MOOD_SVG)
 
 # 动作 → SVG 路径 映射 (按 PetState.h 的 PetAction 顺序,索引 = enum 值 - 1,因为 ACT_NONE=0 不占图)
-# 索引 0 = ACT_EAT, 1 = ACT_PLAY, 2 = ACT_STAND_UP, 3 = ACT_STROKE
+# 索引 0 = ACT_EAT, 1 = ACT_PLAY, 2 = ACT_VIBRATION, 3 = ACT_STROKE
 ACT_SVG = [
-    ("eat",      "cat_pic/eating.svg"),
-    ("play",     "cat_pic/play.svg"),
-    ("stand_up", "cat_pic/stand_up.svg"),
-    ("stroke",   "cat_pic/stroke.svg"),
+    ("eat",       "cat_pic/eating.svg"),
+    ("play",      "cat_pic/play.svg"),
+    ("vibration", "cat_pic/stand_up.svg"),    # 文件名不动,语义改成拍桌
+    ("stroke",    "cat_pic/stroke.svg"),
 ]
 N_ACTS = len(ACT_SVG)
 
@@ -170,11 +170,11 @@ def generate_header(mood_bmps, act_bmps, w, h, output_path):
     # 动作枚举
     lines.append('/* 动作枚举 (与 PetState.h 的 PetAction 一致,索引直接对应查表) */')
     lines.append('enum {')
-    lines.append('    CAT_BMP_ACT_EAT      = 0,  /* ACT_EAT - 1 */')
-    lines.append('    CAT_BMP_ACT_PLAY     = 1,  /* ACT_PLAY - 1 */')
-    lines.append('    CAT_BMP_ACT_STAND_UP = 2,  /* ACT_STAND_UP - 1 */')
-    lines.append('    CAT_BMP_ACT_STROKE   = 3,  /* ACT_STROKE - 1 */')
-    lines.append(f'    CAT_BMP_ACT_COUNT    = {N_ACTS}')
+    lines.append('    CAT_BMP_ACT_EAT       = 0,  /* ACT_EAT - 1 */')
+    lines.append('    CAT_BMP_ACT_PLAY      = 1,  /* ACT_PLAY - 1 */')
+    lines.append('    CAT_BMP_ACT_VIBRATION = 2,  /* ACT_VIBRATION - 1 (源文件 stand_up.svg) */')
+    lines.append('    CAT_BMP_ACT_STROKE    = 3,  /* ACT_STROKE - 1 */')
+    lines.append(f'    CAT_BMP_ACT_COUNT     = {N_ACTS}')
     lines.append('};')
     lines.append('')
 

@@ -132,7 +132,7 @@ def main():
     if act_order:
         make_contact_sheet(bmaps, [f"act_{n}" for n in act_order],
                            f"{OUT_DIR}/_all_actions.png",
-                           "ACTIONS (4): eat play stand_up stroke")
+                           "ACTIONS (4): eat play vibration stroke")
         print(f"  - {OUT_DIR}/_all_actions.png")
 
 if __name__ == "__main__":

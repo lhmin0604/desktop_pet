@@ -183,11 +183,11 @@ const char* PetDisplay::moodName(PetMood mood) {
 /* ==================== 动作 => 底部文字标签 ==================== */
 const char* PetDisplay::actionName(PetAction act) {
     switch (act) {
-        case ACT_EAT:     return "EATING...";
-        case ACT_PLAY:    return "PLAYING!";
-        case ACT_STAND_UP: return "STAND UP!";
-        case ACT_STROKE:  return "PURRING <3";
-        default:          return "?";
+        case ACT_EAT:       return "EATING...";
+        case ACT_PLAY:      return "PLAYING!";
+        case ACT_VIBRATION: return "POUND!!";
+        case ACT_STROKE:    return "PURRING <3";
+        default:            return "?";
     }
 }
 
