@@ -22,6 +22,20 @@ enum PetMood {
     MOOD_COUNT
 };
 
+/* 宠物动作 (瞬时动画,覆盖心情显示,超时后回到心情)
+ * ACT_NONE=0 不会画动作图(查表用 action-1 当索引,所以索引 0..3 对应 ACT_EAT..ACT_STROKE)
+ * 与 cat_bitmaps.h 的 CAT_BMP_ACT_* 一一对应
+ * ACT_VIBRATION 共用 stand_up.svg 文件 (语义改成"拍桌反应") */
+enum PetAction {
+    ACT_NONE      = 0,
+    ACT_EAT       = 1,    /* 吃饭 (K1) */
+    ACT_PLAY      = 2,    /* 玩耍 (K2) */
+    ACT_VIBRATION = 3,    /* 拍桌反应 (v 键) - 用 stand_up.svg 做图 */
+    ACT_STROKE    = 4,    /* 抚摸 (K3 / 磁铁) */
+    ACT_COUNT
+};
+#define ACT_DURATION_MS  3000   /* 动作图持续显示 3 秒后回到心情图 */
+
 /* 导航方向 */
 enum NavDir {
     NAV_RIGHT = 1,
@@ -62,14 +76,20 @@ public:
     void onVibration();                     /* 拍桌子 */
     void onHall(bool close);                /* 磁铁靠近/离开 */
 
+    /* 动作触发 (覆盖心情显示,ACT_DURATION_MS 后自动回心情) */
+    void triggerAction(PetAction act);
+
     /* 获取状态 */
     PetMood getMood() const { return _mood; }
+    PetAction getAction() const { return _action; }   /* ACT_NONE 表示无动作,显示心情 */
     PetStats getStats() const { return _stats; }
 
 private:
     PetProtocol* _proto;
     PetMood _mood;
     PetMood _prev_mood;
+    PetAction _action;                  /* 当前正在执行的动作 (ACT_NONE=无) */
+    unsigned long _action_end;          /* 动作结束时间 (millis) */
     PetStats _stats;
 
     /* 传感器缓存 */

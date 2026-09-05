@@ -39,6 +39,8 @@ PetState::PetState()
     : _proto(nullptr),
       _mood(MOOD_NORMAL),
       _prev_mood(MOOD_NORMAL),
+      _action(ACT_NONE),
+      _action_end(0),
       _temperature(512),
       _light(512),
       _last_decay(0),
@@ -46,7 +48,7 @@ PetState::PetState()
       _mood_start(0) {
 
     _stats.hunger = 80;
-    _stats.energy = 20;     /* 初始精力低 → 默认心情为 SLEEPY（阈值 < 25） */
+    _stats.energy = 50;     /* 初始精力充足 → 默认心情 NORMAL(阈值 < 25 才进 SLEEPY) */
     _stats.happiness = 60;
     _stats.affection = 50;
     _stats.age_minutes = 0;
@@ -65,6 +67,12 @@ void PetState::begin(PetProtocol* proto) {
 
 void PetState::update() {
     unsigned long now = millis();
+
+    /* 0. 动作超时检测 (3s 后自动回心情) */
+    if (_action != ACT_NONE && now >= _action_end) {
+        _action = ACT_NONE;
+        Serial.println("[动作] 结束,恢复显示心情");
+    }
 
     /* 1. 属性自然衰减 (每60秒衰减一次) */
     if (now - _last_decay > 60000) {
@@ -251,6 +259,16 @@ void PetState::checkEnvironment() {
     }
 }
 
+/* ==================== 动作触发 ==================== */
+
+/* 触发一个动作 (覆盖心情显示,持续 ACT_DURATION_MS 后自动回心情) */
+void PetState::triggerAction(PetAction act) {
+    if (act == ACT_NONE || (uint8_t)act >= ACT_COUNT) return;
+    _action = act;
+    _action_end = millis() + ACT_DURATION_MS;
+    Serial.printf("[动作] → %d (持续 %d ms)\n", act, ACT_DURATION_MS);
+}
+
 /* ==================== 交互事件 ==================== */
 
 void PetState::setMood(PetMood mood) {
@@ -260,7 +278,7 @@ void PetState::setMood(PetMood mood) {
     applyMood();
 }
 
-/* K1 = 喂食, K2 = 玩耍, K3 = 摸头 */
+/* K1 = 喂食 (ACT_EAT), K2 = 玩耍 (ACT_PLAY), K3 = 摸头 (ACT_STROKE) */
 void PetState::onButtonPress(uint8_t key_id) {
     _stats.interact_count++;
 
@@ -272,7 +290,7 @@ void PetState::onButtonPress(uint8_t key_id) {
             _stats.happiness += 5;
             if (_stats.happiness > 100) _stats.happiness = 100;
             _proto->sendAll(EXPR_EAT, 0x0C, SOUND_EAT);
-            /* 2秒后恢复正常表情 */
+            triggerAction(ACT_EAT);
             break;
 
         case 2: /* K2: 玩耍 */
@@ -282,6 +300,7 @@ void PetState::onButtonPress(uint8_t key_id) {
             _stats.energy -= 5;  /* 玩耍消耗精力 */
             if (_stats.energy > 100) _stats.energy = 0;
             _proto->sendAll(EXPR_PLAY, 0x3C, SOUND_HAPPY);
+            triggerAction(ACT_PLAY);
             break;
 
         case 3: /* K3: 摸头 */
@@ -290,8 +309,8 @@ void PetState::onButtonPress(uint8_t key_id) {
             if (_stats.affection > 100) _stats.affection = 100;
             _stats.happiness += 8;
             if (_stats.happiness > 100) _stats.happiness = 100;
-            setMood(MOOD_LOVE);
             _proto->sendAll(EXPR_LOVE, 0x81, SOUND_LOVE);
+            triggerAction(ACT_STROKE);
             break;
     }
 
@@ -336,7 +355,7 @@ void PetState::onVibration() {
     _stats.interact_count++;
     Serial.println("[互动] 📳 拍桌子！");
 
-    /* 拍桌子 = 引起注意，宠物被吓到或开心 */
+    /* 拍桌子 = 引起注意,宠物被吓到或开心 */
     if (_stats.happiness > 50) {
         /* 心情好 → 开心回应 */
         _proto->sendAll(EXPR_LAUGH, 0xFF, SOUND_HAPPY);
@@ -348,6 +367,9 @@ void PetState::onVibration() {
 
     if (_stats.happiness > 100) _stats.happiness = 100;
     evaluateMood();
+
+    /* 屏幕上显示拍桌反应 (复用 stand_up.svg,3 秒) */
+    triggerAction(ACT_VIBRATION);
 }
 
 void PetState::onHall(bool close) {
@@ -359,8 +381,8 @@ void PetState::onHall(bool close) {
         _stats.happiness += 8;
         if (_stats.affection > 100) _stats.affection = 100;
         if (_stats.happiness > 100) _stats.happiness = 100;
-        setMood(MOOD_LOVE);
         _proto->sendAll(EXPR_LOVE, 0x81, SOUND_LOVE);
+        triggerAction(ACT_STROKE);
     } else {
         Serial.println("[互动] 🧲 磁铁离开");
         evaluateMood();

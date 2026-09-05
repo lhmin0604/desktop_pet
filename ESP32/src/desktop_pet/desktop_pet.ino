@@ -103,9 +103,10 @@ void onPong() {
  * 波特率 115200，行尾选 "No line ending"（按字符识别，无需回车）
  * 命令:
  *   1-8  切心情 (1开心 2普通 3饥饿 4困倦 5生气 6生病 7超开心 8恋爱)
- *   f    喂食 (K1, 饱食+20 快乐+5)
- *   p    玩耍 (K2, 快乐+15 精力-5)
- *   s    摸头 (K3, 好感+10 快乐+8 心情→恋爱)
+ *   f    喂食 (K1, ACT_EAT, 饱食+20 快乐+5)
+ *   p    玩耍 (K2, ACT_PLAY, 快乐+15 精力-5)
+ *   s    摸头 (K3, ACT_STROKE, 好感+10 快乐+8)
+ *   u    站立 (导航上, ACT_STAND_UP)
  *   v    拍桌子 (振动事件)
  *   h/?  打印本菜单
  */
@@ -113,8 +114,8 @@ void printMoodMenu() {
     Serial.println("\n===== 命令菜单 =====");
     Serial.println("  1-8  切心情  1开心 2普通 3饥饿 4困倦");
     Serial.println("                 5生气 6生病 7超开心 8恋爱");
-    Serial.println("  f 喂食    p 玩耍    s 摸头    v 拍桌");
-    Serial.println("  h / ?  打印本菜单");
+    Serial.println("  f 喂食    p 玩耍    s 摸头    u 站立");
+    Serial.println("  v 拍桌    h / ?  打印本菜单");
     Serial.println("====================");
 }
 
@@ -123,7 +124,7 @@ void handleSerialCommand(char c) {
         PetMood m = (PetMood)(c - '1');
         pet.setMood(m);
         Serial.printf("[命令] 心情 → %d\n", m);
-        display.render(pet.getMood(), pet.getStats(), millis());
+        display.render(pet.getMood(), pet.getAction(), pet.getStats(), millis());
     } else if (c == 'f' || c == 'F') {
         Serial.println("[命令] 喂食");
         pet.onButtonPress(1);
@@ -133,6 +134,9 @@ void handleSerialCommand(char c) {
     } else if (c == 's' || c == 'S') {
         Serial.println("[命令] 摸头");
         pet.onButtonPress(3);
+    } else if (c == 'u' || c == 'U') {
+        Serial.println("[命令] 站立");
+        pet.onNavPress(NAV_UP);
     } else if (c == 'v' || c == 'V') {
         Serial.println("[命令] 拍桌子");
         pet.onVibration();
@@ -152,7 +156,7 @@ void setup() {
     delay(1500);   /* 给 Windows 枚举 USB CDC 设备的时间，否则前几行可能丢失 */
     Serial.println("\n========================================");
     Serial.println("  🐾 桌上宠物 ESP32-S3 控制器");
-    Serial.println("  Phase 1.7: SLEEPY 完整身体 + 状态栏");
+    Serial.println("  Phase 1.8: 8 心情 + 4 动作完整身体矢量图");
     Serial.println("========================================\n");
     Serial.println("[1/4] 调试串口 OK (115200)");
 
@@ -172,17 +176,16 @@ void setup() {
     pet.begin(&protocol);
     Serial.println("[4/4] 状态机就绪");
 
-    /* 点亮 BOX-3B 屏幕，先画一只睡觉的小猫（默认状态） */
+    /* 点亮 BOX-3B 屏幕,默认状态由 PetState::evaluateMood() 根据初始属性决定 */
     Serial.println("[屏幕] 初始化中...");
     display.begin();
-    pet.setMood(MOOD_SLEEPY);
-    display.render(pet.getMood(), pet.getStats(), millis());
+    display.render(pet.getMood(), pet.getAction(), pet.getStats(), millis());
     Serial.println("[屏幕] OK");
     printMoodMenu();
 
     Serial.println("\n[系统] 初始化完成，等待 STC-B 连接...");
     Serial.println("[系统] 请确认 STC-B 已通过 EXT 口连接");
-    Serial.println("[提示] 串口命令: 1-8 切心情 / f 喂食 / p 玩耍 / s 摸头 / v 拍桌 / h 帮助\n");
+    Serial.println("[提示] 串口命令: 1-8 切心情 / f 喂食 / p 玩耍 / s 摸头 / u 站立 / v 拍桌 / h 帮助\n");
 
     /* 等待 STC-B 上线 */
     delay(2000);
@@ -226,9 +229,9 @@ void loop() {
         pet.update();
     }
 
-    /* 5. 屏幕表情随心情/属性/眨眼刷新（80ms 节流，render 内部对未变化短路） */
+    /* 5. 屏幕表情随心情/动作/属性刷新（80ms 节流，render 内部对未变化短路） */
     if (now - last_face_render > 80) {
         last_face_render = now;
-        display.render(pet.getMood(), pet.getStats(), now);
+        display.render(pet.getMood(), pet.getAction(), pet.getStats(), now);
     }
 }
