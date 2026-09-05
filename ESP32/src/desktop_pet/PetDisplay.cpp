@@ -90,7 +90,7 @@ void PetDisplay::render(PetMood mood, PetAction action, const PetStats& stats, u
 void PetDisplay::drawFace(PetMood mood, PetAction action, const PetStats& stats, unsigned long now) {
     _lcd.fillScreen(COL_BG);
 
-    drawStatusBar(stats, now);
+    drawStatusBar(stats, mood);
 
     if (action != ACT_NONE) {
         drawActionBitmap(action);
@@ -101,39 +101,39 @@ void PetDisplay::drawFace(PetMood mood, PetAction action, const PetStats& stats,
     }
 }
 
-/* ==================== 顶部状态栏 (24px) ==================== */
-void PetDisplay::drawStatusBar(const PetStats& stats, unsigned long now) {
+/* ==================== 顶部状态栏 (24px) ====================
+ * 内容: 饱食度 (左) | 心情名 (中) | 精力值 (右)
+ * 移除: 好感心形 / 等级 / 时间 (这 3 项是开发者信息,非宠物状态)
+ * 颜色: 饱食/精力低于阈值时数字变红警告 */
+void PetDisplay::drawStatusBar(const PetStats& stats, PetMood mood) {
     /* 底部分隔线 */
     _lcd.drawFastHLine(0, 24, _lcd.width(), COL_BAR_BG);
 
-    /* 饱食度条：x=4..54, y=8..16 */
+    char buf[16];
+
+    /* === 左侧: 饱食度条 (50x8) + 数值 === */
     _lcd.fillRect(4, 8, 50, 8, COL_BAR_BG);
     int barW = (stats.hunger * 50) / 100;
     if (barW > 0) _lcd.fillRect(4, 8, barW, 8, COL_BAR_FG);
     _lcd.drawRect(4, 8, 50, 8, COL_LINE);
 
-    /* 饱食度百分比文字（Font2 小字） */
     _lcd.setFont(&fonts::Font2);
-    _lcd.setTextColor(COL_TEXT);
     _lcd.setTextDatum(textdatum_t::top_left);
-    char buf[8];
-    snprintf(buf, sizeof(buf), "%d%%", stats.hunger);
+    _lcd.setTextColor(stats.hunger < 30 ? COL_AFF : COL_TEXT);   /* < 30 红字 */
+    snprintf(buf, sizeof(buf), "%d", stats.hunger);
     _lcd.drawString(buf, 60, 8);
 
-    /* 好感心形（小心） */
-    drawSmallHeart(120, 12, 7, COL_AFF);
-    snprintf(buf, sizeof(buf), "%d", stats.affection);
-    _lcd.drawString(buf, 132, 8);
+    /* === 中间: 心情名 (Font4 较大) === */
+    _lcd.setTextDatum(textdatum_t::top_center);
+    _lcd.setFont(&fonts::Font4);
+    _lcd.setTextColor(COL_TEXT);
+    _lcd.drawString(moodShortName(mood), 160, 4);
+    _lcd.setTextDatum(textdatum_t::top_left);
 
-    /* 等级 */
-    snprintf(buf, sizeof(buf), "Lv.%d", stats.level);
-    _lcd.drawString(buf, 180, 8);
-
-    /* 时间占位：基于 millis() 显示已运行 mm:ss（后续接 DS1302） */
-    unsigned long sec = (now / 1000) % 3600;
-    unsigned long mm = sec / 60;
-    unsigned long ss = sec % 60;
-    snprintf(buf, sizeof(buf), "%02lu:%02lu", mm, ss);
+    /* === 右侧: 精力值 === */
+    _lcd.setFont(&fonts::Font2);
+    _lcd.setTextColor(stats.energy < 25 ? COL_AFF : COL_TEXT);   /* < 25 红字 */
+    snprintf(buf, sizeof(buf), "%d", stats.energy);
     _lcd.setTextDatum(textdatum_t::top_right);
     _lcd.drawString(buf, _lcd.width() - 4, 8);
     _lcd.setTextDatum(textdatum_t::top_left);
@@ -176,6 +176,21 @@ const char* PetDisplay::moodName(PetMood mood) {
         case MOOD_SICK:    return "SICK @.@";
         case MOOD_EXCITED: return "EXCITED !!";
         case MOOD_LOVE:    return "LOVE <3";
+        default:           return "?";
+    }
+}
+
+/* 心情 => 状态栏短名 (无表情,只显示名字) */
+const char* PetDisplay::moodShortName(PetMood mood) {
+    switch (mood) {
+        case MOOD_HAPPY:   return "HAPPY";
+        case MOOD_NORMAL:  return "NORMAL";
+        case MOOD_HUNGRY:  return "HUNGRY";
+        case MOOD_SLEEPY:  return "SLEEPY";
+        case MOOD_ANGRY:   return "ANGRY";
+        case MOOD_SICK:    return "SICK";
+        case MOOD_EXCITED: return "EXCITED";
+        case MOOD_LOVE:    return "LOVE";
         default:           return "?";
     }
 }

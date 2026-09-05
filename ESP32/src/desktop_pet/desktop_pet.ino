@@ -176,10 +176,9 @@ void setup() {
     pet.begin(&protocol);
     Serial.println("[4/4] 状态机就绪");
 
-    /* 点亮 BOX-3B 屏幕，先画一只睡觉的小猫（默认状态） */
+    /* 点亮 BOX-3B 屏幕,默认状态由 PetState::evaluateMood() 根据初始属性决定 */
     Serial.println("[屏幕] 初始化中...");
     display.begin();
-    pet.setMood(MOOD_SLEEPY);
     display.render(pet.getMood(), pet.getAction(), pet.getStats(), millis());
     Serial.println("[屏幕] OK");
     printMoodMenu();

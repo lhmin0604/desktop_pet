@@ -48,7 +48,7 @@ PetState::PetState()
       _mood_start(0) {
 
     _stats.hunger = 80;
-    _stats.energy = 20;     /* 初始精力低 → 默认心情为 SLEEPY（阈值 < 25） */
+    _stats.energy = 50;     /* 初始精力充足 → 默认心情 NORMAL(阈值 < 25 才进 SLEEPY) */
     _stats.happiness = 60;
     _stats.affection = 50;
     _stats.age_minutes = 0;

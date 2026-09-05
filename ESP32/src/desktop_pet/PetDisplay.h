@@ -42,7 +42,7 @@ private:
 
     /* === 绘制子模块 === */
     void drawFace(PetMood mood, PetAction action, const PetStats& stats, unsigned long now);
-    void drawStatusBar(const PetStats& stats, unsigned long now);
+    void drawStatusBar(const PetStats& stats, PetMood mood);    /* 顶栏 24px: 饱食 + 心情 + 精力 */
     void drawActionLabel(PetAction action);                    /* 底部动作文字 (EATING...) */
     void drawMoodLabel(PetMood mood);                          /* 底部心情文字 (HAPPY:) */
 
@@ -53,7 +53,8 @@ private:
     /* === 工具 === */
     void drawSmallHeart(int cx, int cy, int s, uint32_t c);  /* 状态栏小心 */
     uint16_t cont(uint8_t r, uint8_t g, uint8_t b) { return _lcd.color888(r, g, b); }
-    const char* moodName(PetMood mood);
+    const char* moodName(PetMood mood);          /* 长名 (带表情),底部 label 用 */
+    const char* moodShortName(PetMood mood);     /* 短名 (无表情),状态栏用 */
     const char* actionName(PetAction act);
 };
 
