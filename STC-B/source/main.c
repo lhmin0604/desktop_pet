@@ -53,7 +53,6 @@ static unsigned int sensor_temp = 0;      /* 温度 ADC 值 */
 static unsigned int sensor_light = 0;     /* 光照 ADC 值 */
 static unsigned char sensor_buttons = 0;  /* 按键状态 */
 static unsigned char sensor_flags = 0;    /* 事件标志 */
-static unsigned char sensor_dirty = 0;    /* 数据更新标志 */
 
 /* 传感器定时上报计数器 */
 static unsigned int sensor_timer = 0;
@@ -165,10 +164,7 @@ static void OnCommand(CommFrame *frame)
 
         /* --- 心跳 --- */
         case CMD_SYS_PING:
-            {
-                unsigned char pong = CMD_SYS_PONG;
-                CommSendFrame(CMD_SYS_PONG, 0, 0);
-            }
+            CommSendFrame(CMD_SYS_PONG, 0, 0);
             break;
 
         /* --- 重置 --- */
@@ -196,7 +192,6 @@ static void OnKeyEvent(void)
     if(key_act == enumKeyPress)
     {
         sensor_buttons |= 0x01;
-        sensor_dirty = 1;
         CommSendEvent(EVENT_KEY, 0x01);
     }
     if(key_act == enumKeyRelease)
@@ -207,7 +202,6 @@ static void OnKeyEvent(void)
     if(key_act == enumKeyPress)
     {
         sensor_buttons |= 0x02;
-        sensor_dirty = 1;
         CommSendEvent(EVENT_KEY, 0x02);
     }
     if(key_act == enumKeyRelease)
@@ -218,7 +212,6 @@ static void OnKeyEvent(void)
     if(key_act == enumKeyPress)
     {
         sensor_buttons |= 0x04;
-        sensor_dirty = 1;
         CommSendEvent(EVENT_KEY, 0x03);
     }
     if(key_act == enumKeyRelease)
@@ -228,9 +221,6 @@ static void OnKeyEvent(void)
 /* 导航按键事件回调 */
 static void OnNavEvent(void)
 {
-    /* 导航按键方向上报 */
-    unsigned char dir;
-
     if(GetAdcNavAct(enumAdcNavKeyUp) == enumKeyPress)
         CommSendEvent(EVENT_NAV, 0x05);
     if(GetAdcNavAct(enumAdcNavKeyDown) == enumKeyPress)
@@ -249,7 +239,6 @@ static void OnVibEvent(void)
     if(GetVibAct() == enumVibQuake)
     {
         sensor_flags |= 0x01;   /* bit0 = 振动 */
-        sensor_dirty = 1;
         CommSendEvent(EVENT_VIB, 0x01);
     }
 }
@@ -261,7 +250,6 @@ static void OnHallEvent(void)
     if(hall == enumHallGetClose)
     {
         sensor_flags |= 0x02;   /* bit1 = 霍尔 */
-        sensor_dirty = 1;
         CommSendEvent(EVENT_HALL, 0x01);
     }
     else if(hall == enumHallGetAway)
@@ -307,7 +295,7 @@ void main()
     KeyInit();
 
     /* 3. 初始化 ADC（含扩展口，启用温度/光照/导航按键） */
-    AdcInit(ADCexpEXT);   /* 不使用EXT的ADC，保留EXT给UART2 */
+    AdcInit(ADCexpEXT);   /* 启用扩展口ADC，用于温度/光照/导航按键 */
 
     /* 4. 初始化 DS1302 实时时钟 */
     /* DS1302Init(default_time); */  /* TODO: 配置默认时间 */
