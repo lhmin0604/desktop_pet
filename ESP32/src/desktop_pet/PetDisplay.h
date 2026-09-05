@@ -41,6 +41,7 @@ private:
     /* === 绘制子模块 === */
     void drawFace(PetMood mood, const PetStats& stats, unsigned long now);
     void drawStatusBar(const PetStats& stats, unsigned long now);
+    void drawMoodLabel(PetMood mood);                          /* 底部心情文字 (HAPPY:) */
 
     /* === 完整身体矢量图（每个心情一张，8 个全部由 cat_bitmaps.h 提供） === */
     void drawMoodBitmap(PetMood mood); /* 查表 cat_bitmaps[mood],bit=0 调 drawPixel */
