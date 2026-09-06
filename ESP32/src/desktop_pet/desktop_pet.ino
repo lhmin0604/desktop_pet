@@ -10,6 +10,7 @@
  *************************************************************/
 
 #include <Arduino.h>
+#include <Wire.h>
 #include "PetProtocol.h"
 #include "PetState.h"
 #include "PetDisplay.h"
@@ -103,11 +104,12 @@ void onPong() {
  * 波特率 115200，行尾选 "No line ending"（按字符识别，无需回车）
  * 命令:
  *   1-8  切心情 (1开心 2普通 3饥饿 4困倦 5生气 6生病 7超开心 8恋爱)
- *   f    喂食 (K1, ACT_EAT, 饱食+20 快乐+5)
+ *   f    喂食 (K1, ACT_EAT, 饱食+20 快乐+5 精力+10)
  *   p    玩耍 (K2, ACT_PLAY, 快乐+15 精力-5)
- *   s    摸头 (K3, ACT_STROKE, 好感+10 快乐+8)
+ *   s    摸头 (K3, ACT_STROKE, 好感+10 快乐+8 精力+5)
  *   u    站立 (导航上, ACT_STAND_UP)
- *   v    拍桌子 (振动事件)
+ *   v    拍桌 (ACT_VIBRATION)
+ *   i    重扫 I2C 总线 (触摸 debug)
  *   h/?  打印本菜单
  */
 void printMoodMenu() {
@@ -115,7 +117,7 @@ void printMoodMenu() {
     Serial.println("  1-8  切心情  1开心 2普通 3饥饿 4困倦");
     Serial.println("                 5生气 6生病 7超开心 8恋爱");
     Serial.println("  f 喂食    p 玩耍    s 摸头    u 站立");
-    Serial.println("  v 拍桌    h / ?  打印本菜单");
+    Serial.println("  v 拍桌    i 重扫I2C  h / ?  打印本菜单");
     Serial.println("====================");
 }
 
@@ -140,6 +142,9 @@ void handleSerialCommand(char c) {
     } else if (c == 'v' || c == 'V') {
         Serial.println("[命令] 拍桌子");
         pet.onVibration();
+    } else if (c == 'i' || c == 'I') {
+        Serial.println("[命令] 重扫 I2C");
+        scanI2C();
     } else if (c == 'h' || c == 'H' || c == '?') {
         printMoodMenu();
     } else if (c == '\n' || c == '\r' || c == ' ') {
@@ -176,6 +181,9 @@ void setup() {
     pet.begin(&protocol);
     Serial.println("[4/4] 状态机就绪");
 
+    /* 0. I2C 触摸扫描 (debug) — 触摸不响应时确认硬件和地址 */
+    scanI2C();
+
     /* 点亮 BOX-3B 屏幕,默认状态由 PetState::evaluateMood() 根据初始属性决定 */
     Serial.println("[屏幕] 初始化中...");
     display.begin();
@@ -185,7 +193,7 @@ void setup() {
 
     Serial.println("\n[系统] 初始化完成，等待 STC-B 连接...");
     Serial.println("[系统] 请确认 STC-B 已通过 EXT 口连接");
-    Serial.println("[提示] 串口命令: 1-8 切心情 / f 喂食 / p 玩耍 / s 摸头 / u 站立 / v 拍桌 / h 帮助\n");
+    Serial.println("[提示] 串口命令: 1-8 切心情 / f 喂食 / p 玩耍 / s 摸头 / u 站立 / v 拍桌 / i 重扫I2C / h 帮助\n");
 
     /* 等待 STC-B 上线 */
     delay(2000);
