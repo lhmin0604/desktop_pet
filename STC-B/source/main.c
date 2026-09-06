@@ -2,9 +2,19 @@
  * 桌上宠物 - STC-B 主控程序 (main.c)
  * Phase 1: 通信 + 表情系统
  *
- * 硬件: STC-B 学习板 (STC15F2K60S2)
+ * 硬件: STC-B 学习板 (IAP15F2K61S2-LQFP44, 兼容 STC15F2K60S2)
  * 连接: UART2(EXT口) ↔ ESP32-S3-BOX-3B
  * 波特率: 9600 bps, 8N1
+ *
+ * 引脚分配 (依据原理图 Ver3, 2015.1.2):
+ *   K1=P3.2(GPIO)  K2=P3.3(GPIO)  K3=P1.7(GPIO/ADC7)
+ *   五向导航=P1.2(ADC2, 电阻分压 R31-R36)  蜂鸣器=P3.4
+ *   UART2=P1.0(RxD2)/P1.1(TxD2), 经200R到EXT口
+ *   数码管段码=P0.0-P0.7  位选SEL0-2=P2.0-P2.2(74HC138)
+ *   LED使能=P2.3(ULN2003)  振动=P2.4  霍尔=EXT口
+ *   DS1302: SCLK=P5.4  IO=P4.0  /RST=P4.2
+ *   I2C: SDA=P4.0(与RTC_IO共用!)  SCL=P5.5
+ *   温度V_Rt / 光照V_Ro: ADC通道由BSP决定
  ************************************************************/
 
 #include "STC15F2K60S2.H"
@@ -207,7 +217,8 @@ static void OnKeyEvent(void)
     if(key_act == enumKeyRelease)
         sensor_buttons &= ~0x02;
 
-    /* K3 (注意: ADC启用后K3需通过 GetAdcNavAct 读取) */
+    /* K3: P1.7 (GPIO/ADC7), 独立按键, 非ADC导航键 */
+    /* 注意: 若BSP启用ADC7, K3的GPIO读取可能失效, 需确认BSP行为 */
     key_act = GetKeyAct(enumKey3);
     if(key_act == enumKeyPress)
     {
@@ -294,10 +305,19 @@ void main()
     /* 2. 初始化按键 */
     KeyInit();
 
-    /* 3. 初始化 ADC（含扩展口，启用温度/光照/导航按键） */
-    AdcInit(ADCexpEXT);   /* 启用扩展口ADC，用于温度/光照/导航按键 */
+    /* 3. 初始化 ADC（五向导航键 P1.2/ADC2 + 温度/光照传感器）
+     * ⚠️ 警告: ADCexpEXT 可能将 P1.0/P1.1 设为模拟输入,
+     *    与 UART2(P1.0=RxD2, P1.1=TxD2) 产生冲突!
+     *    若 UART2 通信异常, 需改用仅启用所需通道的初始化方式。
+     *    温度/光照传感器的实际 ADC 引脚需查阅 BSP 确认。
+     */
+    AdcInit(ADCexpEXT);   /* 启用ADC: 导航键P1.2 + 温度/光照 + EXT口P1.0/P1.1 */
 
-    /* 4. 初始化 DS1302 实时时钟 */
+    /* 4. 初始化 DS1302 实时时钟
+     * DS1302引脚: SCLK=P5.4  IO=P4.0  /RST=P4.2
+     * ⚠️ 注意: P4.0 同时是 I2C_SDA, 硬件上 DS1302_IO 与 I2C_SDA 共用,
+     *    不能同时使用 DS1302 和 I2C EEPROM(24C01)。
+     */
     /* DS1302Init(default_time); */  /* TODO: 配置默认时间 */
 
     /* 5. 初始化串口通信 (UART2, 9600bps) */

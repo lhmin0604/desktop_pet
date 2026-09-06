@@ -67,8 +67,8 @@ DesktopPet/
 |------|------|--------|---------|
 | 8位数码管 | 动态扫描，共阴极 | displayer.h V2.0a | `Seg7Print(d0..d7)` + `LedPrint(led)` |
 | 8个LED | L0-L7 指示灯 | displayer.h | 位掩码控制 |
-| 3个按键 | K1/K2/K3 | Key.h V2.0 | K3 与 ADC 导航共用 P1.7 |
-| 5方向导航键 | 上/下/左/右/中 | adc.h V3.5a | 通过 ADC 电阻分压识别 |
+| 3个按键 | K1/K2/K3 | Key.h V2.0 | K1=P3.2, K2=P3.3, K3=P1.7 (均为GPIO独立按键) |
+| 5方向导航键 | 上/下/左/右/中 | adc.h V3.5a | P1.2/ADC2, 电阻分压(R31-R36)识别 |
 | 蜂鸣器 | CCP 通道1 | Beep.h V2.0 | `SetBeep(freq_hz, time)` |
 | 温度传感器 | 10K/3950 NTC | adc.h | ADC 通道 Rt（10bit） |
 | 光照传感器 | GL5516 光敏电阻 | adc.h | ADC 通道 Rop（10bit）|
@@ -182,7 +182,7 @@ code char decode_table[] = { ... };      // 数码管段码表，必须有
 
 ### ⚠️ 关键约束
 - **所有回调函数执行时间必须 < 1ms**，否则 `PollingMisses` 会增加
-- **K3 与 ADC 共用 P1.7**：ADC 启用后 K3 必须用 `GetAdcNavAct(enumAdcNavKey3)` 读取
+- **K3 在 P1.7 (同时是 ADC7)**：K3 是独立 GPIO 按键，不与导航键共用引脚。但若 BSP 启用 ADC7，K3 的 GPIO 读取可能失效，需确认 BSP 行为
 - **UART2 使用 EXT 口时**：不能调用 `EXTInit()`
 - **Music 模块与 Beep/Displayer 互斥**：不能同时使用
 - **decode_table** 需要在 main.c 中用 `code` 关键字定义（存在 ROM 中节省 RAM）
