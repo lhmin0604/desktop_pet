@@ -32,20 +32,23 @@ LGFX::LGFX(void) {
     }
     _panel.setBus(&_bus);
 
-    /* === Touch I2C (TT21100) — 触摸类自带 I2C 配置, 不需要 _bus_i2c / setBus === */
+    /* === Touch I2C (GT911 @ 0x5D) — 触摸类自带 I2C 配置, 不需要 _bus_i2c / setBus ===
+     * 之前误配成 TT21100 @ 0x24, 实际新批次 BOX-3B 用的是 GT911 (chip ID "911" 在 0x5D).
+     * pin_int / pin_rst 都置 -1, 用 I2C 轮询 (init() 失败时会在 0x14 <-> 0x5D 自动切换) */
     {
         auto tcfg = _touch.config();
         tcfg.x_min = 0;
-        tcfg.x_max = 320;
+        tcfg.x_max = 320;       /* 屏幕宽 */
         tcfg.y_min = 0;
-        tcfg.y_max = 240;
-        tcfg.pin_int = -1;        /* BOX-3B TT21100 INT 未接,纯轮询 */
-        tcfg.pin_rst = -1;        /* RST 也不接,上电默认运行 */
-        tcfg.bus_shared = false;  /* 触摸独占 I2C0 */
+        tcfg.y_max = 240;       /* 屏幕高 (GT911 默认 0-2047, 范围对不上) */
+        tcfg.pin_int = -1;      /* INT 不用, 纯轮询 */
+        tcfg.pin_rst = -1;      /* RST 浮空 (GPIO48 驱动会白屏, 文档 §1.5) */
+        tcfg.bus_shared = false; /* I2C 与 SPI 分离 */
         tcfg.i2c_port = 0;
         tcfg.pin_scl  = 18;
         tcfg.pin_sda  = 8;
-        tcfg.i2c_addr = 0x24;     /* TT21100 默认 I2C 地址 (若不行改 0x5D) */
+        tcfg.i2c_addr = 0x5D;   /* GT911 默认地址 2 (chip ID 0x39313100 = "911\0") */
+        tcfg.freq     = 400000; /* GT911 最高 400kHz */
         _touch.config(tcfg);
     }
     _panel.setTouch(&_touch);

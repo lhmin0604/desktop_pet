@@ -21,7 +21,7 @@ class LGFX : public lgfx::LGFX_Device {
 public:
     lgfx::Bus_SPI       _bus;          /* LCD SPI */
     lgfx::Panel_ILI9342 _panel;
-    lgfx::Touch_TT21xxx _touch;        /* BOX-3B 电容触摸 IC (TT21100) - I2C 配置内置 */
+    lgfx::Touch_GT911   _touch;        /* BOX-3B 新批次: GT911 @ 0x5D (旧批次才用 TT21xxx @ 0x24) */
     LGFX(void);
 };
 
