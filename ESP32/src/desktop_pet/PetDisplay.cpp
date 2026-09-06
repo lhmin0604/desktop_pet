@@ -50,7 +50,10 @@ LGFX::LGFX(void) {
         tcfg.y_min = 0;
         tcfg.y_max = 240;
         tcfg.pin_int = -1;        /* BOX-3B TT21100 INT 未接,纯轮询 */
+        tcfg.pin_rst = -1;        /* RST 也不接,上电默认运行 */
         tcfg.bus_shared = false;  /* 触摸独占 I2C0 */
+        tcfg.i2c_port = 0;
+        tcfg.i2c_addr = 0x24;     /* TT21100 默认 I2C 地址 (若不行改 0x5D) */
         _touch.config(tcfg);
     }
     _panel.setTouch(&_touch);

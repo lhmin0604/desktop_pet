@@ -22,7 +22,7 @@ public:
     lgfx::Bus_SPI       _bus;          /* LCD SPI */
     lgfx::Bus_I2C       _bus_i2c;      /* Touch I2C */
     lgfx::Panel_ILI9342 _panel;
-    lgfx::Touch_TT21100 _touch;        /* BOX-3B 电容触摸 IC */
+    lgfx::Touch_TT21xxx _touch;        /* BOX-3B 电容触摸 IC (TT21100) */
     LGFX(void);
 };
 
