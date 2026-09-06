@@ -23,6 +23,76 @@
 /* 调试串口 */
 #define DEBUG_BAUD    115200
 
+/* 触摸 I2C 引脚 (BOX-3B TT21100/GT911) */
+#define TOUCH_SDA_PIN  8
+#define TOUCH_SCL_PIN  18
+
+/* ==================== I2C 扫描 (debug) ====================
+ * 触摸不响应时先扫一下看是什么 IC 什么地址
+ * 输出每个找到的设备 + chip ID (0x8140 处读 4 字节, TT21100 应为 "TT21", GT911 应为 0x3911) */
+void scanI2C() {
+    Wire.begin(TOUCH_SDA_PIN, TOUCH_SCL_PIN, 400000UL);
+    Serial.println("\n========== I2C 扫描 ==========");
+    Serial.printf("  总线: SDA=GPIO%d SCL=GPIO%d @ 400 kHz\n", TOUCH_SDA_PIN, TOUCH_SCL_PIN);
+    Serial.println("  扫描地址 0x01-0x7F ...");
+
+    uint8_t found[16];
+    int n = 0;
+    for (uint8_t a = 0x01; a < 0x7F; a++) {
+        Wire.beginTransmission(a);
+        uint8_t err = Wire.endTransmission();
+        if (err == 0 && n < 16) found[n++] = a;
+    }
+
+    if (n == 0) {
+        Serial.println("  ❌ 未发现任何 I2C 设备!");
+        Serial.println("  检查:");
+        Serial.println("   1) BOX-3B 排线是否插紧 (DOCK 排线连 P1 触摸)");
+        Serial.println("   2) SDA/SCL 引脚是否被其他设备占用 (本项目 GPIO8/18)");
+        Serial.println("   3) 触摸 IC 是否有供电 (3.3V)");
+        Serial.println("================================\n");
+        return;
+    }
+
+    Serial.printf("  ✅ 发现 %d 个设备: ", n);
+    for (int i = 0; i < n; i++) Serial.printf("0x%02X ", found[i]);
+    Serial.println();
+
+    /* 对每个设备读 chip ID (TT21xxx/GT911 都在 0x8140) */
+    for (int i = 0; i < n; i++) {
+        uint8_t a = found[i];
+        uint8_t reg[2] = { 0x81, 0x40 };
+        Wire.beginTransmission(a);
+        Wire.write(reg, 2);
+        uint8_t err = Wire.endTransmission(false);   /* 不要 STOP, 接着读 */
+        if (err != 0) {
+            Serial.printf("    @0x%02X: 无法写寄存器\n", a);
+            continue;
+        }
+        Wire.requestFrom(a, (uint8_t)4);
+        if (Wire.available() != 4) {
+            Serial.printf("    @0x%02X: 读不到 4 字节 (available=%d)\n", a, Wire.available());
+            continue;
+        }
+        uint8_t id[4];
+        for (int k = 0; k < 4; k++) id[k] = Wire.read();
+
+        const char* ic = "?";
+        if (id[0] == 0x54 && id[1] == 0x54) ic = "TT21100 (TT21)";
+        else if (id[0] == 0x39 && id[1] == 0x31) ic = "GT911/GT9110";
+        else if (id[0] == 0x00 && id[1] == 0x00) ic = "(全0, 可能是其它寄存器布局)";
+
+        Serial.printf("    @0x%02X chip ID: %02X %02X %02X %02X  ASCII='%c%c%c%c'  → %s\n",
+            a, id[0], id[1], id[2], id[3],
+            (id[0] >= 32 && id[0] < 127) ? id[0] : '.',
+            (id[1] >= 32 && id[1] < 127) ? id[1] : '.',
+            (id[2] >= 32 && id[2] < 127) ? id[2] : '.',
+            (id[3] >= 32 && id[3] < 127) ? id[3] : '.',
+            ic);
+    }
+    Serial.println("================================\n");
+}
+
 /* ==================== 全局对象 ==================== */
 PetProtocol protocol;       /* 通信协议处理器 */
 PetState pet;               /* 宠物状态机 */
