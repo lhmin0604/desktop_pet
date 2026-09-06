@@ -1,0 +1,37 @@
+# STC-B BSP 教学资料 (Keil 头文件 + 预编译 LIB)
+# 来自 F:\workingexesices\TEXT\B\升级包BSP_Ver3.6b\
+# 本项目不重新分发, 仅本地编译用
+BSP/inc/*
+BSP/source/*
+!BSP/inc/.gitkeep
+!BSP/source/.gitkeep
+
+# Keil 构建产物
+list/
+
+# SDCC 构建产物
+list_sdcc/
+output/
+
+# 编译器中间文件 (Keil A51 / SDCC sdas8051)
+*.LST
+*.lst
+*.rel
+*.rst
+*.sym
+*.map
+*.obj
+*.ihx
+*.hex
+*.bin
+*.mem
+*.o
+
+# 临时项目资料 (不进版本控制, 仅本地参考)
+paw_box_latest_*/
+DOCK_Pmod.jpg
+image.pdf
+cat_exaple.png
+error_face.jpg
+error_svg.jpg
+"编译说明.md"
