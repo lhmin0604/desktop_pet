@@ -16,8 +16,9 @@
 #include "PetDisplay.h"
 
 /* ==================== 引脚定义 ==================== */
-#define ESP_TX2_PIN   43    /* ESP32 TX2 → STC-B EXT_RXD (3.3V直连) */
-#define ESP_RX2_PIN   44    /* ESP32 RX2 ← STC-B EXT_TXD (需5V→3.3V电平转换) */
+#define ESP_TX2_PIN   43    /* ESP32 TX2 → 485模块DI (3.3V直连) */
+#define ESP_RX2_PIN   44    /* ESP32 RX2 ← 485模块RO (需3.3V TTL, 模块RO走3.3V电平) */
+#define ESP_485_DE    38    /* ESP32 GPIO38 → 485模块DE+RE (Pmod左上) */
 #define SERIAL_BAUD   9600
 
 /* 调试串口 */
@@ -256,17 +257,17 @@ void setup() {
     Serial.println("========================================\n");
     Serial.println("[1/4] 调试串口 OK (115200)");
 
-    /* 通信串口 (连接 STC-B) */
+    /* 通信串口 (连接 STC-B via RS485) */
     Serial2.begin(SERIAL_BAUD, SERIAL_8N1, ESP_RX2_PIN, ESP_TX2_PIN);
-    Serial.println("[2/4] Serial2 (UART2 → STC-B) 已开 9600");
+    Serial.println("[2/4] Serial2 (UART2 → 485) 已开 9600");
 
-    /* 初始化协议处理器 */
-    protocol.begin(&Serial2);
+    /* 初始化协议处理器 + RS485 DE 控制 */
+    protocol.begin(&Serial2, ESP_485_DE);
     protocol.onSensorReport(onSensorReport);
     protocol.onEvent(onEvent);
     protocol.onAck(onAck);
     protocol.onPong(onPong);
-    Serial.println("[3/4] 协议回调已注册");
+    Serial.println("[3/4] 协议回调已注册 (paw_box 协议 + 485 DE)");
 
     /* 初始化宠物状态机 */
     pet.begin(&protocol);
