@@ -1,10 +1,11 @@
 /************************************************************
  * 桌上宠物 - 屏幕表情显示 (PetDisplay.h)
- * 驱动 BOX-3B ILI9342C 彩屏，线稿+局部彩色风格绘制宠物小脸
- * 心情变 → 脸变；周期性眨眼；心情装饰；顶部状态栏 HUD
+ * 驱动 BOX-3B ILI9342C 彩屏 + TT21100 电容触摸,线稿+局部彩色风格绘制宠物小脸
+ * 心情变 → 脸变;动作触发 → 覆盖心情;周期性眨眼;心情装饰;顶部状态栏 HUD
  *
- * 引脚 (BOX-3B 内部已接好，无需外接):
- *   SPI:  SCLK=7  MOSI=6  CS=5  DC=4  RST=悬空  BL=47
+ * 引脚 (BOX-3B 内部已接好,无需外接):
+ *   LCD SPI:  SCLK=7  MOSI=6  CS=5  DC=4  RST=悬空  BL=47
+ *   Touch I2C: SDA=8  SCL=18  (TT21100 中断 INT 未接,轮询)
  *   (来源: LovyanGFX AutoDetect 中 ESP32_S3_BOX_V3 配置)
  ************************************************************/
 
@@ -15,11 +16,13 @@
 #include <LovyanGFX.hpp>
 #include "PetState.h"
 
-/* BOX-3B 屏幕面板（显式配置，参照官方 AutoDetect） */
+/* BOX-3B 屏幕面板 (显式配置,参照官方 AutoDetect) + 触摸 */
 class LGFX : public lgfx::LGFX_Device {
 public:
-    lgfx::Bus_SPI       _bus;
+    lgfx::Bus_SPI       _bus;          /* LCD SPI */
+    lgfx::Bus_I2C       _bus_i2c;      /* Touch I2C */
     lgfx::Panel_ILI9342 _panel;
+    lgfx::Touch_TT21100 _touch;        /* BOX-3B 电容触摸 IC */
     LGFX(void);
 };
 
@@ -29,6 +32,13 @@ public:
     /* 渲染一帧;动作非 ACT_NONE 时覆盖心情显示动作图,持续 ACT_DURATION_MS 后自动回心情
      * 仅在 (心情变化 || 属性变化 || 动作变化) 时真正重画 */
     void render(PetMood mood, PetAction action, const PetStats& stats, unsigned long now);
+
+    /* 触摸接口: 返回 true 表示新一次按下 (已去抖,每次按下只触发一次)
+     * x/y 是触点坐标 (0-319 / 0-239),如不需要可传 nullptr */
+    bool getTouch(int* x, int* y);
+
+    /* 直接读原始触点 (不去抖) */
+    bool rawTouch(int* x, int* y) { return _lcd.getTouch(x, y); }
 
 private:
     LGFX _lcd;

@@ -234,4 +234,26 @@ void loop() {
         last_face_render = now;
         display.render(pet.getMood(), pet.getAction(), pet.getStats(), now);
     }
+
+    /* 6. 触摸处理 — 3 区域映射:
+     *   y= 24-130  (猫头上半)  → STROKE (K3, 摸头)
+     *   y=130-200  (猫身下半)  → PLAY   (K2, 逗猫)
+     *   y=200-240  (底部 40px)  → EAT    (K1, 喂食)
+     *   y=  0- 24  (状态栏)    → 忽略
+     * 用 getTouch() 已去抖,每次按下只触发一次 onButtonPress */
+    int tx, ty;
+    if (display.getTouch(&tx, &ty)) {
+        if (ty < 24) {
+            /* 状态栏,忽略 */
+        } else if (ty < 130) {
+            Serial.printf("[触摸] (%d,%d) 摸头 → STROKE\n", tx, ty);
+            pet.onButtonPress(3);
+        } else if (ty < 200) {
+            Serial.printf("[触摸] (%d,%d) 逗猫 → PLAY\n", tx, ty);
+            pet.onButtonPress(2);
+        } else {
+            Serial.printf("[触摸] (%d,%d) 喂食 → EAT\n", tx, ty);
+            pet.onButtonPress(1);
+        }
+    }
 }

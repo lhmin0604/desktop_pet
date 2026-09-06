@@ -17,6 +17,7 @@ static const uint32_t COL_AFF      = 0xE53935;   /* 好感心形红 */
 
 /* ==================== LGFX 构造（BOX-3B 引脚，参照 AutoDetect） ==================== */
 LGFX::LGFX(void) {
+    /* === LCD SPI === */
     {
         auto cfg = _bus.config();
         cfg.pin_mosi   = 6;
@@ -31,6 +32,30 @@ LGFX::LGFX(void) {
     }
     _panel.setBus(&_bus);
 
+    /* === Touch I2C (TT21100) === */
+    {
+        auto cfg = _bus_i2c.config();
+        cfg.pin_sda = 8;
+        cfg.pin_scl = 18;
+        cfg.i2c_port = 0;
+        cfg.freq_write = 400000;
+        cfg.freq_read  = 400000;
+        _bus_i2c.config(cfg);
+    }
+    _touch.setBus(&_bus_i2c);
+    {
+        auto tcfg = _touch.config();
+        tcfg.x_min = 0;
+        tcfg.x_max = 320;
+        tcfg.y_min = 0;
+        tcfg.y_max = 240;
+        tcfg.pin_int = -1;        /* BOX-3B TT21100 INT 未接,纯轮询 */
+        tcfg.bus_shared = false;  /* 触摸独占 I2C0 */
+        _touch.config(tcfg);
+    }
+    _panel.setTouch(&_touch);
+
+    /* === Panel === */
     {
         auto cfg = _panel.config();
         cfg.pin_cs           = 5;
@@ -58,6 +83,26 @@ void PetDisplay::begin() {
     _lastLevel      = 255;
 
     Serial.printf("[屏幕] 已初始化，逻辑分辨率 %d x %d\n", _lcd.width(), _lcd.height());
+}
+
+/* ==================== 触摸去抖 ====================
+ * 每次按下只触发一次 (新按 = 之前未按 + 现在按),松开后再按才会再次触发
+ * 用于把"持续按住"过滤成"单击"事件 */
+bool PetDisplay::getTouch(int* x, int* y) {
+    static bool was_touched = false;
+    int tx = 0, ty = 0;
+    bool touched = _lcd.getTouch(&tx, &ty);
+    if (x) *x = tx;
+    if (y) *y = ty;
+
+    if (touched && !was_touched) {
+        was_touched = true;
+        return true;     /* 新按下 */
+    }
+    if (!touched) {
+        was_touched = false;
+    }
+    return false;        /* 持续按住 / 未按 */
 }
 
 /* ==================== 主渲染（带短路逻辑） ==================== */
