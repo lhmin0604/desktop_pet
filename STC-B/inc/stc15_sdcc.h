@@ -169,4 +169,5 @@ __sbit __at (0x8C) TR0;
 __sbit __at (0x8D) TF0;
 __sbit __at (0xB7) RS485_DE;     /* P3.7 - 485 方向控制 (跟 TXD2 共用, 收发切换时手动控制) */
 
+__sfr __at (0x9D) P1ASF;
 #endif /* STC15_SDCC_H */
