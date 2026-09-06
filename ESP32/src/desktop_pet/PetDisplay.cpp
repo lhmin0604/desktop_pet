@@ -32,17 +32,7 @@ LGFX::LGFX(void) {
     }
     _panel.setBus(&_bus);
 
-    /* === Touch I2C (TT21100) === */
-    {
-        auto cfg = _bus_i2c.config();
-        cfg.pin_sda = 8;
-        cfg.pin_scl = 18;
-        cfg.i2c_port = 0;
-        cfg.freq_write = 400000;
-        cfg.freq_read  = 400000;
-        _bus_i2c.config(cfg);
-    }
-    _touch.setBus(&_bus_i2c);
+    /* === Touch I2C (TT21100) — 触摸类自带 I2C 配置, 不需要 _bus_i2c / setBus === */
     {
         auto tcfg = _touch.config();
         tcfg.x_min = 0;
@@ -53,6 +43,8 @@ LGFX::LGFX(void) {
         tcfg.pin_rst = -1;        /* RST 也不接,上电默认运行 */
         tcfg.bus_shared = false;  /* 触摸独占 I2C0 */
         tcfg.i2c_port = 0;
+        tcfg.pin_scl  = 18;
+        tcfg.pin_sda  = 8;
         tcfg.i2c_addr = 0x24;     /* TT21100 默认 I2C 地址 (若不行改 0x5D) */
         _touch.config(tcfg);
     }
