@@ -284,7 +284,7 @@ void setup() {
     printMoodMenu();
 
     Serial.println("\n[系统] 初始化完成，等待 STC-B 连接...");
-    Serial.println("[系统] 请确认 STC-B 已通过 EXT 口连接");
+    Serial.println("[系统] 请确认 STC-B 已通过 485 接口连接 (板上 MAX485 ↔ ESP32 485模块)");
     Serial.println("[提示] 串口命令: 1-8 切心情 / f 喂食 / p 玩耍 / s 摸头 / u 站立 / v 拍桌 / i 重扫I2C / h 帮助\n");
 
     /* 等待 STC-B 上线 */

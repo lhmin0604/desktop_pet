@@ -63,6 +63,16 @@
 #define EXPR_HELLO      0x0A
 #define EXPR_PLAY       0x0B
 
+/* ============ 音效ID (跟 STC-B 端 protocol_sdcc.h SOUND_* 对齐) ============ */
+#define SOUND_SHORT     0x01
+#define SOUND_HAPPY     0x02
+#define SOUND_SAD       0x03
+#define SOUND_ALARM     0x04
+#define SOUND_EAT       0x05
+#define SOUND_SLEEP     0x06
+#define SOUND_WAKE      0x07
+#define SOUND_LOVE      0x08
+
 /* ============ 事件类型 ============ */
 #define EVENT_KEY       0x01
 #define EVENT_NAV       0x02
