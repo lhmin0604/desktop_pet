@@ -142,11 +142,58 @@ hook 函数中的内存地址是从 `.map` 文件硬编码提取的：
 2. 查看 `output/DesktopPet_STC.map` 中的 `s_XSEG`, `l_XSEG`, `s_XISEG`, `s_XINIT`, `l_XINIT`
 3. 更新 `main_app.c` 中的 `#define` 值
 
-### SDCC 链接器符号引用问题
+---
 
-SDCC 对链接器符号（如 `l_XSEG`, `s_XINIT`）的 C 级别引用存在 bug：
-编译器会将符号的**地址**和符号地址处的**值**混淆，导致生成错误的立即数。
-因此当前采用硬编码方式，而非引用链接器符号。
+## 🔴 当前卡住的问题（未解决）
+
+### 症状
+
+Hook 函数**已被正确调用**（LCALL 到我们的函数），且**返回 1** (MOV DPL, #0x01; RET)，
+成功跳过了 SDCC 默认的 buggy genXINIT/genXRAMCLEAR。
+
+**但是**，hook 内部的 XSEG 清零循环和 XINIT 复制循环使用的立即数可能是错误的。
+
+### 具体表现
+
+上一次编译验证时发现：
+- `XSEG_SIZE` 定义为 `0x010E` (270)，但编译器生成的汇编是 `MOV R6, #0x01`（只清 1 字节）
+- `XINIT_SIZE` 定义为 `0x0026` (38)，但编译器生成的汇编是 `MOV R4, #0x0E; MOV R5, #0x01`（复制 270 字节）
+- 两个值**看起来互换了**，而且都不对
+
+### 尝试过的方案及失败原因
+
+| 方案 | 结果 | 原因 |
+|------|------|------|
+| 在 asm 里定义 `__sdcc_gsinit_startup` 替换默认启动 | ❌ 失败 | 链接器输出了两份 HOME 区代码（我们的 + 库的），库的排在后面覆盖了我们的 |
+| `--no-std-crt0` 禁止默认 crt0 | ❌ 失败 | 链接器报 "No definition of area HOME/XSEG/PSEG" |
+| 后处理 IHX 删除重复记录 | ⚠️ 部分成功 | 能去掉库的重复记录，但 HOME 区有多段重叠（GSINIT3/GSINIT4），处理复杂且脆弱 |
+| 在 asm 里定义 `__sdcc_external_startup` | ❌ 失败 | 链接器丢弃了我们的版本，用了库的 weak 定义 |
+| 在 C 里引用链接器符号 (`extern unsigned char l_XSEG`) | ❌ 失败 | SDCC 链接器符号无下划线前缀 (`l_XSEG`)，C 编译后带下划线 (`_l_XSEG`)，无法匹配 |
+| 在 C 里用 `#define` 硬编码地址值 | ⚠️ **待验证** | 上次编译发现编译器把 define 的值解析错了（疑似混淆了地址和值），尚未完成修正后的重新验证 |
+| 用 linker_syms.asm 桥接符号命名 | ❌ 失败 | `.equ` 不能用于链接时才确定的符号，报 relocation error |
+
+### 可能的根因
+
+1. **SDCC 编译器对常量折叠有 bug**：当 `#define` 的值与某些内部符号地址接近时，编译器可能用符号地址替换了常量值
+2. **上次验证时 .lst 文件是旧的**：.lst 和 .rel/BIN 不匹配，可能导致误判
+3. **`p[i] = 0` vs `*p++ = 0` 的编译差异**：不同的 C 写法可能导致编译器生成不同的循环结构
+
+### 下一步应该做什么
+
+1. **重新编译 main_app.c**（确保 .lst 和 .rel 都是最新的），检查 hook 函数的 .lst 输出中循环计数是否正确：
+   ```
+   预期: MOV R6, #0x0E; MOV R7, #0x01  (XSEG_SIZE = 0x010E)
+   预期: MOV R4, #0x26; MOV R5, #0x00  (XINIT_SIZE = 0x0026)
+   ```
+
+2. 如果立即数仍然错误，尝试以下替代方案：
+   - **方案 A**：用 `volatile unsigned int` 变量存储大小，阻止编译器常量折叠
+   - **方案 B**：在 hook 函数中用 `__asm ... __endasm` 内联汇编直接写正确的 MOVX/MOVC 循环
+   - **方案 C**：在 .asm 文件中定义 `___sdcc_external_startup`，用 `.dw` 数据段存放常量，从 C 读取
+
+3. 确认 XINIT_START 地址正确（当前是 0x143E，随代码变动会变化）
+
+4. 重新链接 → 生成 BIN → 验证 BIN 中 hook 函数的字节是否匹配预期
 
 ### 验证方法
 
@@ -163,6 +210,12 @@ assert d[0] == 0x02  # LJMP 指令
 # 在 map 文件中查找 ___sdcc_external_startup 地址
 # 该函数末尾应为: 75 82 01 22 (MOV DPL, #1; RET)
 
-# 3. face_table 数据应完整存在于 CODE 区
+# 3. 验证循环计数是否正确（关键！）
+# 从 map 获取 ___sdcc_external_startup 的地址 hook_addr
+# 检查 hook_addr+1 和 hook_addr+3 的值:
+#   d[hook_addr+1] 应为 XSEG_SIZE 低字节 (0x0E)
+#   d[hook_addr+3] 应为 XSEG_SIZE 高字节 (0x01)
+
+# 4. face_table 数据应完整存在于 CODE 区
 # 搜索字节序列: 21 03 00 00 00 00 0C 18 (笑脸表情)
 ```
