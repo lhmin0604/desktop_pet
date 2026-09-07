@@ -1,4 +1,4 @@
-/*
+﻿/*
  * main_app.c - 桌上宠物 STC-B 主程序 (SDCC + paw_box 485)
  *
  * 协议: paw_box [0xAA][0x55][ADDR][CMD][LEN][DATA][CRC8]
@@ -68,56 +68,57 @@ __sbit __at (0x99) TI;      /* TI 位 (SFR 0x99 bit 1) */
 #define DEBUG_BAUD   115200UL
 #define BRT_RELOAD   (256U - (unsigned char)(11059200UL / 2UL / DEBUG_BAUD))
 
-/* ============ SDCC 启动钩子 (C 实现, 修复 genXINIT/genXRAMCLEAR bug) ============
- * SDCC 默认 startup 的 bug: 当 XSEG 大小高低字节都非零时 (如 0x010E=270),
- * genXRAMCLEAR 只清 28 字节 (应 270), genXINIT 把 XISEG 写成 0xFF.
- *
- * 修复: 定义 __sdcc_external_startup hook:
- * - 手动清零 XSEG (正确的 16 位计数)
- * - 手动复制 XINIT -> XISEG (正确的 16 位计数)
- * - 返回 1 跳过 SDCC 默认的 genXINIT/genXRAMCLEAR
- */
 
-/*
- * 地址来源 (从 .map 文件提取, 内存布局变化时需更新):
- *   s_XSEG  = 0x0001  (XDATA BSS 起始)
- *   l_XSEG  = 0x010E  (XDATA BSS 长度 = 270 字节)
- *   s_XISEG = 0x010F  (XDATA 初始化区起始)
- *   s_XINIT = 0x143E  (CODE 中初始化数据源)
- *   l_XINIT = 0x0026  (初始化数据长度 = 38 字节)
- *
- * 注意: SDCC 对 linker 符号的 C 引用有 bug (混淆地址和值),
- * 所以这里直接用硬编码立即数, 不引用 linker 符号.
+
+
+/* ============ SDCC 启动钩子 (修复 genXINIT/genXRAMCLEAR bug) ============
+ * 地址由构建脚本自动从 .map 提取并更新
  */
-#define XSEG_START   0x0001U
-#define XSEG_SIZE    0x010EU   /* 270 bytes */
-#define XISEG_START  0x010FU
-#define XINIT_START  0x143EU
-#define XINIT_SIZE   0x0026U   /* 38 bytes */
+#define XSEG_START  0x00000001U
+#define XSEG_SIZE  0x0000010EU
+#define XISEG_START  0x0000010FU
+#define XINIT_START  0x00001484U
+#define XINIT_SIZE  0x00000026U
 
 unsigned char __sdcc_external_startup(void)
 {
-    /* === 1. 正确清零 XSEG (XDATA BSS, 270 字节) === */
-    {
-        unsigned char __xdata *p = (unsigned char __xdata *)XSEG_START;
-        unsigned int i;
-        for (i = 0; i < XSEG_SIZE; i++) {
-            p[i] = 0;
-        }
-    }
+    unsigned char __xdata *p;
+    unsigned int i;
 
-    /* === 2. 正确复制 XINIT(CODE) -> XISEG(XDATA) (38 字节) === */
+    /* 1. 清零 XSEG */
+    p = (unsigned char __xdata *)XSEG_START;
+    for (i = 0; i < XSEG_SIZE; i++) p[i] = 0;
+
+    /* 2. 复制 XINIT(CODE) -> XISEG(XDATA) */
     {
-        unsigned char __code  *src = (unsigned char __code *)XINIT_START;
+        const unsigned char __code *src = (const unsigned char __code *)XINIT_START;
         unsigned char __xdata *dst = (unsigned char __xdata *)XISEG_START;
-        unsigned int i;
-        for (i = 0; i < XINIT_SIZE; i++) {
-            dst[i] = src[i];
-        }
+        for (i = 0; i < XINIT_SIZE; i++) dst[i] = src[i];
     }
 
-    return 1;  /* 返回非零: 跳过 SDCC 默认的 genXINIT/genXRAMCLEAR */
+    return 1;
 }
+
+/* ============ 中断向量包装 (修复 SDCC 不自动生成向量的问题) ============ */
+extern void timer0_isr(void);
+extern void uart2_isr(void);
+
+void __sdcc_vector_timer0(void) __interrupt(1) __naked {
+    __asm__("lcall _timer0_isr");
+    __asm__("reti");
+}
+
+void __sdcc_vector_uart2(void) __interrupt(8) __naked {
+    __asm__("lcall _uart2_isr");
+    __asm__("reti");
+}
+
+
+/* ============ 中断向量表 (手动定义, 修复 SDCC 不自动生成向量的问题) ============ */
+void __sdcc_isr_dummy(void) __interrupt(0) __naked {
+    __asm__("reti");
+}
+
 
 static void debug_uart1_init(void)
 {

@@ -1,22 +1,17 @@
-@echo off
-REM build_sdcc.bat - STC-B compile (SDCC, main_app + 8 SDCC native drivers + paw_box 485)
+﻿@echo off
+REM build_sdcc.bat - STC-B compile (SDCC, two-step build for XINIT address fix)
 REM
-REM Output: output\DesktopPet_STC.ihx (Intel HEX) + output\DesktopPet_STC.bin
-REM Requires: SDCC at F:\SDCC (or set SDCC_HOME)
-REM
-REM FIX: SDCC default startup has genXINIT/genXRAMCLEAR bugs when XSEG size
-REM has both high and low bytes non-zero (e.g. 0x010E = 270 bytes).
-REM Fix: __sdcc_external_startup hook in main_app.c does correct init and
-REM returns 1 to skip the buggy default routines. No custom crt0 needed.
+REM Step 1: Compile all C files, link to get .map
+REM Step 2: Extract addresses from .map, update main_app.c
+REM Step 3: Recompile main_app.c, relink, generate BIN
 
 setlocal
-if "%SDCC_HOME%"=="" set "SDCC_HOME=F:\SDCC"
+if "%SDCC_HOME%"=="" set "SDCC_HOME=D:\Program Files\keil\SDCC"
 set "SDCC_BIN=%SDCC_HOME%\bin"
 if not exist "%SDCC_BIN%\sdcc.exe" (
     echo [ERROR] sdcc.exe not found at %SDCC_BIN%
     exit /b 1
 )
-
 set "PATH=%SDCC_BIN%;%PATH%"
 
 set "P=%~dp0"
@@ -38,10 +33,9 @@ del /q "%OUT%\*.sym" 2>nul
 del /q "%OUT%\*.lst" 2>nul
 
 REM ============================================================
-REM Step 1: 编译 11 个 C 文件
-REM (startup hook is in main_app.c, no custom crt0 needed)
+REM Step 1: Compile all C files (first pass)
 REM ============================================================
-echo [1/3] SDCC compile C files
+echo [1/5] SDCC compile C files (pass 1)
 for %%F in (
     main_app
     comm_pawbox_sdcc
@@ -61,9 +55,9 @@ for %%F in (
 )
 
 REM ============================================================
-REM Step 2: 链接 (使用 SDCC 默认 crt0, hook 在 main_app.c 里)
+REM Step 2: Link (first pass, to get .map with correct addresses)
 REM ============================================================
-echo [2/3] SDCC link
+echo [2/5] SDCC link (pass 1, for address extraction)
 pushd "%OUT%"
 sdcc -mmcs51 --model-large --opt-code-size -o "DesktopPet_STC.ihx" ^
     "%OUT%\main_app.rel" ^
@@ -79,15 +73,46 @@ sdcc -mmcs51 --model-large --opt-code-size -o "DesktopPet_STC.ihx" ^
     "%OUT%\expression.rel" ^
     -I "%SDCC_HOME%\include" ^
     -L "%SDCC_HOME%\lib\mcs51"
-if errorlevel 1 ( echo [FAIL] Link & popd & exit /b 1 )
+if errorlevel 1 ( echo [FAIL] Link pass 1 & popd & exit /b 1 )
 popd
 
 REM ============================================================
-REM 输出
+REM Step 3: Extract addresses from .map and update main_app.c
 REM ============================================================
-echo.
-echo [3/3] Build complete
-dir /b "%OUT%\*.ihx" "%OUT%\*.map" 2>nul
+echo [3/5] Extract addresses from .map and update main_app.c
+python "%P%update_xinit_addr.py"
+if errorlevel 1 ( echo [FAIL] Address extraction & exit /b 1 )
+
+REM ============================================================
+REM Step 4: Recompile main_app.c (with correct addresses)
+REM ============================================================
+echo [4/5] Recompile main_app.c (pass 2, with correct addresses)
+del /q "%OUT%\main_app.rel" "%OUT%\main_app.lst" 2>nul
+sdcc -c -mmcs51 --model-large --std-sdcc99 --opt-code-size -I "%SRC%" -I "%INC%" -o "%OUT%/" "%SRC%\main_app.c"
+if errorlevel 1 ( echo [FAIL] main_app.c pass 2 & exit /b 1 )
+
+REM ============================================================
+REM Step 5: Final link and BIN generation
+REM ============================================================
+echo [5/5] SDCC final link + BIN
+pushd "%OUT%"
+del /q "DesktopPet_STC.ihx" "DesktopPet_STC.map" 2>nul
+sdcc -mmcs51 --model-large --opt-code-size -o "DesktopPet_STC.ihx" ^
+    "%OUT%\main_app.rel" ^
+    "%OUT%\comm_pawbox_sdcc.rel" ^
+    "%OUT%\bsp485_sdcc.rel" ^
+    "%OUT%\sys.rel" ^
+    "%OUT%\display.rel" ^
+    "%OUT%\beep.rel" ^
+    "%OUT%\keys.rel" ^
+    "%OUT%\adc_drv.rel" ^
+    "%OUT%\vib.rel" ^
+    "%OUT%\hall.rel" ^
+    "%OUT%\expression.rel" ^
+    -I "%SDCC_HOME%\include" ^
+    -L "%SDCC_HOME%\lib\mcs51"
+if errorlevel 1 ( echo [FAIL] Final link & popd & exit /b 1 )
+popd
 
 if exist "%OUT%\DesktopPet_STC.ihx" (
     "%SDCC_BIN%\makebin" -s 65536 "%OUT%\DesktopPet_STC.ihx" "%OUT%\DesktopPet_STC_8k.bin" >nul 2>&1
@@ -95,4 +120,14 @@ if exist "%OUT%\DesktopPet_STC.ihx" (
     if exist "%OUT%\DesktopPet_STC_8k.bin" echo   BIN: %OUT%\DesktopPet_STC_8k.bin (64KB)
 )
 
+
+REM ============================================================
+REM Step 6: Fix UART2 interrupt vector (SDCC places it at wrong address)
+REM ============================================================
+echo [6/6] Fix UART2 interrupt vector
+python "%P%fix_uart2_vector.py"
+if errorlevel 1 ( echo [WARN] UART2 vector patch failed )
+
+echo.
+echo [OK] Build complete
 endlocal

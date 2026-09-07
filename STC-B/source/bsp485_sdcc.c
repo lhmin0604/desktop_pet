@@ -1,4 +1,4 @@
-/*
+﻿/*
  * bsp485_sdcc.c - 485 UART2 驱动 (移植自 paw_box, SDCC 兼容)
  *
  * 改动:
@@ -24,7 +24,7 @@ void uart2_init(void)
 {
     unsigned int v = 65536UL - FOSC / 4 / BAUD485;
     RS485_DE = 0;
-    P_SW2 |= 0x01;       /* S2_S = 1: UART2 切到 P3.6 (RXD2) / P3.7 (TXD2) */
+    P_SW2 |= 0x01;       /* S2_S = 1: UART2 切到 P4.6 (RXD2) / P4.7 (TXD2) */
     S2CON = 0x10;        /* mode 1 (8-bit UART), REN=1 */
     T2L = (unsigned char)v;
     T2H = (unsigned char)(v >> 8);
