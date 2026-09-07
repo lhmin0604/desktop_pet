@@ -9,9 +9,11 @@
 #include "stc15_sdcc.h"
 #include "display.h"
 
+/* 不加 = {0} 初始化, 走 BSS (SDCC BSS 清零工作正常, XINIT 复制有 bug).
+ * 真正关键的数据 (face_table) 改成 const 放 CODE 区. */
 unsigned char disp_segments[8];
-unsigned char disp_led = 0;
-static unsigned char disp_digit = 0;
+unsigned char disp_led;
+static unsigned char disp_digit;
 
 void display_init(void)
 {

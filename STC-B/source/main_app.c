@@ -55,7 +55,113 @@ extern void comm_send_event(unsigned char event_type, unsigned char event_data);
 extern volatile unsigned char comm_cmd_ready;
 extern volatile unsigned char comm_last_cmd;
 extern volatile unsigned char comm_last_len;
+extern volatile unsigned int  comm_rx_byte_count;
+extern volatile unsigned int  comm_tx_byte_count;
 extern unsigned char comm_rx_payload[];
+
+/* ============ UART1 debug (P3.1 TX, 115200, BRT 1T 模式) ============ */
+/* 用 BRT (独立波特率发生器), 不抢 Timer1 (蜂鸣器) 和 Timer2 (UART2) */
+__sfr __at (0x98) SCON;     /* UART1 控制 */
+__sfr __at (0x99) SBUF;     /* UART1 数据 */
+__sbit __at (0x99) TI;      /* TI 位 (SFR 0x99 bit 1) */
+
+#define DEBUG_BAUD   115200UL
+#define BRT_RELOAD   (256U - (unsigned char)(11059200UL / 2UL / DEBUG_BAUD))
+
+/* ============ SDCC 启动钩子 (C 实现, 修复 genXINIT/genXRAMCLEAR bug) ============
+ * SDCC 默认 startup 的 bug: 当 XSEG 大小高低字节都非零时 (如 0x010E=270),
+ * genXRAMCLEAR 只清 28 字节 (应 270), genXINIT 把 XISEG 写成 0xFF.
+ *
+ * 修复: 定义 __sdcc_external_startup hook:
+ * - 手动清零 XSEG (正确的 16 位计数)
+ * - 手动复制 XINIT -> XISEG (正确的 16 位计数)
+ * - 返回 1 跳过 SDCC 默认的 genXINIT/genXRAMCLEAR
+ */
+
+/*
+ * 地址来源 (从 .map 文件提取, 内存布局变化时需更新):
+ *   s_XSEG  = 0x0001  (XDATA BSS 起始)
+ *   l_XSEG  = 0x010E  (XDATA BSS 长度 = 270 字节)
+ *   s_XISEG = 0x010F  (XDATA 初始化区起始)
+ *   s_XINIT = 0x143E  (CODE 中初始化数据源)
+ *   l_XINIT = 0x0026  (初始化数据长度 = 38 字节)
+ *
+ * 注意: SDCC 对 linker 符号的 C 引用有 bug (混淆地址和值),
+ * 所以这里直接用硬编码立即数, 不引用 linker 符号.
+ */
+#define XSEG_START   0x0001U
+#define XSEG_SIZE    0x010EU   /* 270 bytes */
+#define XISEG_START  0x010FU
+#define XINIT_START  0x143EU
+#define XINIT_SIZE   0x0026U   /* 38 bytes */
+
+unsigned char __sdcc_external_startup(void)
+{
+    /* === 1. 正确清零 XSEG (XDATA BSS, 270 字节) === */
+    {
+        unsigned char __xdata *p = (unsigned char __xdata *)XSEG_START;
+        unsigned int i;
+        for (i = 0; i < XSEG_SIZE; i++) {
+            p[i] = 0;
+        }
+    }
+
+    /* === 2. 正确复制 XINIT(CODE) -> XISEG(XDATA) (38 字节) === */
+    {
+        unsigned char __code  *src = (unsigned char __code *)XINIT_START;
+        unsigned char __xdata *dst = (unsigned char __xdata *)XISEG_START;
+        unsigned int i;
+        for (i = 0; i < XINIT_SIZE; i++) {
+            dst[i] = src[i];
+        }
+    }
+
+    return 1;  /* 返回非零: 跳过 SDCC 默认的 genXINIT/genXRAMCLEAR */
+}
+
+static void debug_uart1_init(void)
+{
+    SCON = 0x40;            /* mode 1, REN=0 (只发不收) */
+    BRT  = BRT_RELOAD;      /* 11059200/2/115200 = 48, 256-48 = 208 = 0xD0 */
+    AUXR |= 0x04;           /* BRTR=1: 启动 BRT */
+    AUXR |= 0x10;           /* BRTx12=1: BRT 1T 模式 */
+    AUXR |= 0x01;           /* S1_BRT=1: UART1 用 BRT 波特率 */
+    TI = 1;                 /* 软件置位, 允许首次发送 */
+}
+
+static void debug_putc(char c)
+{
+    while (!TI);
+    TI = 0;
+    SBUF = (unsigned char)c;
+}
+
+static void debug_print(const char *s)
+{
+    while (*s) debug_putc(*s++);
+}
+
+static void debug_newline(void)
+{
+    debug_print("\r\n");
+}
+
+static void debug_u8(unsigned char v)
+{
+    char buf[4];
+    buf[3] = 0;
+    buf[2] = '0' + (v % 10); v /= 10;
+    buf[1] = '0' + (v % 10); v /= 10;
+    buf[0] = '0' + (v % 10);
+    debug_print(buf);
+}
+
+static void debug_hex8(unsigned char v)
+{
+    const char hex[] = "0123456789ABCDEF";
+    debug_putc(hex[(v >> 4) & 0x0F]);
+    debug_putc(hex[v & 0x0F]);
+}
 
 /* ============ 便捷应答 ============ */
 static void send_ack(unsigned char orig_cmd)
@@ -251,11 +357,16 @@ static void tick_1ms(void)
 /* ============ 主程序 ============ */
 int main(void)
 {
+    /* 0. UART1 debug 初始化 (P3.1 TX, 115200, BRT 1T) */
+    debug_uart1_init();
+    debug_print("[STC-B] UART1 debug OK @ 115200\r\n");
+
     /* 1. 1ms 系统时基 (Timer0) */
     sys_init();
 
     /* 2. 通信 (UART2 + 板上 MAX485) */
     comm_init();
+    debug_print("[STC-B] 485 init OK (P3.6/P3.7, T2 baud)\r\n");
 
     /* 3. 外设 */
     keys_init();
@@ -263,11 +374,13 @@ int main(void)
     vib_init();
     hall_init();
     expr_init();
+    debug_print("[STC-B] peripherals OK\r\n");
 
     /* 4. 开机表情 */
     expr_set_face(EXPR_SMILE);
     expr_set_led(0x01);
     beep_set(1000, 10);   /* 1kHz, 100ms 启动提示音 */
+    debug_print("[STC-B] boot done, waiting PING from ESP32...\r\n");
 
     /* 5. 主循环 */
     while (1)
@@ -281,6 +394,11 @@ int main(void)
             unsigned char cmd = comm_last_cmd;
             unsigned char len = comm_last_len;
             comm_cmd_ready = 0;
+            debug_print("RX cmd=0x");
+            debug_hex8(cmd);
+            debug_print(" len=");
+            debug_u8(len);
+            debug_print("\r\n");
             on_command(cmd, len);
         }
 
@@ -309,6 +427,7 @@ int main(void)
             {
                 sensor_report_cnt = 0;
                 comm_send_sensor(sensor_temp, sensor_light);
+                debug_print("TX sensor report\r\n");
             }
         }
 
@@ -317,6 +436,17 @@ int main(void)
         {
             sys_flag_100ms = 0;
             expr_animate();
+        }
+
+        /* 1000ms 任务: 485 统计 */
+        if (sys_flag_1000ms)
+        {
+            sys_flag_1000ms = 0;
+            debug_print("[STATS] RX_bytes=");
+            debug_u8((unsigned char)(comm_rx_byte_count & 0xFF));
+            debug_print(" TX_bytes=");
+            debug_u8((unsigned char)(comm_tx_byte_count & 0xFF));
+            debug_print("\r\n");
         }
     }
 

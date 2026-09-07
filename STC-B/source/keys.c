@@ -7,6 +7,8 @@
 #include "stc15_sdcc.h"
 #include "keys.h"
 
+/* 走 BSS (BSS 清零工作正常). 之前加的 = {0} 反而走 XINIT, 触发 SDCC
+ * 链接器的 XINIT 偏移 bug, 让按键状态机从随机值开始. */
 static unsigned char key_raw[3];
 static unsigned char key_stable[3];
 static unsigned char key_prev[3];

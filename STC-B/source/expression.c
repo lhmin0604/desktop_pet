@@ -39,8 +39,13 @@
 #define SWAVE (SC|SD|SE|SG)
 #define SNONE 0x00
 
-/* 预设表情表: 12个表情 x 8字节 = 96字节, 扁平化1D数组 */
-unsigned char face_table[96] = {
+/* 预设表情表: 12个表情 x 8字节 = 96字节, 扁平化1D数组
+ *
+ * ★ 关键: 用 static const 强制放 CODE 区 (--model-large 下默认会进
+ *   XDATA + XINIT 复制, 但 SDCC 链接器的 IHX 输出在某些情况下
+ *   XINIT 偏移错位, 导致 face_table 读到的是 XDATA 随机值, 7-seg
+ *   显示乱码. 改 const 后直接 MOVC 读, 绕过 XINIT, 100% 可靠). */
+static const unsigned char face_table[96] = {
     /* 0x00 笑脸 */
     SA|SF, SA|SB, SNONE, SNONE, SNONE, SNONE, SC|SD, SD|SE,
     /* 0x01 大笑 */
@@ -67,11 +72,12 @@ unsigned char face_table[96] = {
     SWAVE, SNONE, SWAVE, SNONE, SNONE, SNONE, SNONE, SNONE
 };
 
-/* 音效参数表 [freq, time_10ms] */
-unsigned int sound_freq[8] = {
+/* 音效参数表 [freq, time_10ms]
+ * 同样改 const 放 CODE 区, 避免 XINIT 复制问题 */
+static const unsigned int sound_freq[8] = {
     1000, 1200, 600, 1500, 800, 300, 500, 900
 };
-unsigned int sound_time[8] = {
+static const unsigned int sound_time[8] = {
     1, 2, 3, 1, 1, 4, 2, 3
 };
 

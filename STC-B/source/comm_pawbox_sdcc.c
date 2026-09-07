@@ -27,6 +27,8 @@
 #define ST_WAIT_DATA  5
 #define ST_WAIT_CRC   6
 
+/* 走 BSS (BSS 清零工作正常). 之前加的 = 0 初始化反而走 XINIT, 但
+ * SDCC 链接器 IHX 输出有 XINIT 偏移 bug, 会读到错误的 XDATA 内容. */
 static unsigned char f_state;
 static unsigned char f_addr;
 static unsigned char f_cmd;
@@ -37,6 +39,8 @@ static unsigned char f_pos;
 volatile unsigned char comm_cmd_ready = 0;
 volatile unsigned char comm_last_cmd = 0;
 volatile unsigned char comm_last_len = 0;
+volatile unsigned int  comm_rx_byte_count = 0;   /* 485 接收字节数 (debug) */
+volatile unsigned int  comm_tx_byte_count = 0;   /* 485 发送字节数 (debug) */
 unsigned char comm_rx_payload[FRAME_MAX_DATA];
 
 /* ============ 发送缓冲 ============ */
@@ -83,6 +87,7 @@ void comm_resp_send(unsigned char cmd, const unsigned char *payload, unsigned ch
     for (i = 0; i < len; i++) f_txbuf[k++] = payload[i];
     f_txbuf[k++] = crc8(&f_txbuf[2], (unsigned char)(3 + len));
 
+    comm_tx_byte_count += k;
     uart2_send_buf(f_txbuf, k);
 }
 
@@ -113,6 +118,7 @@ void comm_poll(void)
 
     while (rx_get(&b))
     {
+        comm_rx_byte_count++;
         switch (f_state)
         {
         case ST_WAIT_P0:

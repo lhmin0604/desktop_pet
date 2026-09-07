@@ -1,8 +1,13 @@
 @echo off
 REM build_sdcc.bat - STC-B compile (SDCC, main_app + 8 SDCC native drivers + paw_box 485)
 REM
-REM Output: output\DesktopPet_STC.ihx (Intel HEX)
+REM Output: output\DesktopPet_STC.ihx (Intel HEX) + output\DesktopPet_STC.bin
 REM Requires: SDCC at F:\SDCC (or set SDCC_HOME)
+REM
+REM FIX: SDCC default startup has genXINIT/genXRAMCLEAR bugs when XSEG size
+REM has both high and low bytes non-zero (e.g. 0x010E = 270 bytes).
+REM Fix: __sdcc_external_startup hook in main_app.c does correct init and
+REM returns 1 to skip the buggy default routines. No custom crt0 needed.
 
 setlocal
 if "%SDCC_HOME%"=="" set "SDCC_HOME=F:\SDCC"
@@ -30,23 +35,13 @@ del /q "%OUT%\*.mem" 2>nul
 del /q "%OUT%\*.lk" 2>nul
 del /q "%OUT%\*.rst" 2>nul
 del /q "%OUT%\*.sym" 2>nul
+del /q "%OUT%\*.lst" 2>nul
 
 REM ============================================================
-REM Step 1: crt0 汇编
+REM Step 1: 编译 11 个 C 文件
+REM (startup hook is in main_app.c, no custom crt0 needed)
 REM ============================================================
-echo [1/4] Assembling crt0_sdcc.asm
-pushd "%SRC%"
-"%SDCC_BIN%\sdas8051.exe" -plosgff crt0_sdcc.asm
-set ERR=%ERRORLEVEL%
-popd
-if not %ERR%==0 ( echo [FAIL] sdas8051 & exit /b 1 )
-if not exist "%SRC%\crt0_sdcc.rel" ( echo [FAIL] crt0.rel missing & exit /b 1 )
-move /y "%SRC%\crt0_sdcc.rel" "%OUT%\" >nul
-
-REM ============================================================
-REM Step 2: 编译 11 个 C 文件
-REM ============================================================
-echo [2/4] SDCC compile C files
+echo [1/3] SDCC compile C files
 for %%F in (
     main_app
     comm_pawbox_sdcc
@@ -61,17 +56,16 @@ for %%F in (
     expression
 ) do (
     echo   compiling %%F.c ...
-    sdcc -c -mmcs51 --model-large --std-sdcc99 --opt-code-size -I "%INC%" -o "%OUT%/" "%SRC%\%%F.c"
+    sdcc -c -mmcs51 --model-large --std-sdcc99 --opt-code-size -I "%SRC%" -I "%INC%" -o "%OUT%/" "%SRC%\%%F.c"
     if errorlevel 1 ( echo [FAIL] %%F.c & exit /b 1 )
 )
 
 REM ============================================================
-REM Step 3: 链接
+REM Step 2: 链接 (使用 SDCC 默认 crt0, hook 在 main_app.c 里)
 REM ============================================================
-echo [3/4] SDCC link
+echo [2/3] SDCC link
 pushd "%OUT%"
 sdcc -mmcs51 --model-large --opt-code-size -o "DesktopPet_STC.ihx" ^
-    "%OUT%\crt0_sdcc.rel" ^
     "%OUT%\main_app.rel" ^
     "%OUT%\comm_pawbox_sdcc.rel" ^
     "%OUT%\bsp485_sdcc.rel" ^
@@ -92,13 +86,13 @@ REM ============================================================
 REM 输出
 REM ============================================================
 echo.
-echo [4/4] Build complete
+echo [3/3] Build complete
 dir /b "%OUT%\*.ihx" "%OUT%\*.map" 2>nul
 
 if exist "%OUT%\DesktopPet_STC.ihx" (
-    "%SDCC_BIN%\makebin" -s 65536 "%OUT%\DesktopPet_STC.ihx" "%OUT%\DesktopPet_STC.bin" >nul 2>&1
+    "%SDCC_BIN%\makebin" -s 65536 "%OUT%\DesktopPet_STC.ihx" "%OUT%\DesktopPet_STC_8k.bin" >nul 2>&1
     echo   IHX: %OUT%\DesktopPet_STC.ihx
-    if exist "%OUT%\DesktopPet_STC.bin" echo   BIN: %OUT%\DesktopPet_STC.bin
+    if exist "%OUT%\DesktopPet_STC_8k.bin" echo   BIN: %OUT%\DesktopPet_STC_8k.bin (64KB)
 )
 
 endlocal
