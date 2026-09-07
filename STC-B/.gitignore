@@ -35,3 +35,6 @@ cat_exaple.png
 error_face.jpg
 error_svg.jpg
 "编译说明.md"
+
+# SDCC 编译调试日志
+build_out.txt
